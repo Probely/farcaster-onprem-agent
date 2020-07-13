@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: probely-onprem-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: probely-onprem-agent
+  template:
+    metadata:
+      labels:
+        app: probely-onprem-agent
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: probely-onprem-agent
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: tunnel
+        image: __DOCKER_IMAGE__
+        env:
+        - name: FARCASTER_AGENT_HUB
+          value: hub.farcaster.probely.com:443
+        - name: FARCASTER_REMOTE_GATEWAY
+          value: 127.0.0.1:2222
+        command:
+        - /farcaster/bin/start-tunnel.sh
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - SETUID
+            - SETGID
+            - CHOWN
+            - FOWNER
+        volumeMounts:
+        - name: tunnel-run
+          mountPath: /run
+        - name: farcaster-tunnel-secrets
+          mountPath: /farcaster/restricted/secrets
+          readOnly: true
+      - name: gateway
+        image: __DOCKER_IMAGE__
+        env:
+        - name: FARCASTER_AGENT_HUB
+          value: hub.farcaster.probely.com:443
+        - name: FARCASTER_REMOTE_GATEWAY
+          value: 127.0.0.1:2222
+        command:
+        - /farcaster/bin/start-gateway.sh
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - SETUID
+            - SETGID
+            - CHOWN
+            - FOWNER
+            - SYS_CHROOT
+            - KILL
+        volumeMounts:
+        - name: gateway-run
+          mountPath: /run
+        - name: farcaster-gateway-secrets
+          mountPath: /farcaster/restricted/secrets
+          readOnly: true
+      volumes:
+      - name: tunnel-run
+        emptyDir:
+          medium: Memory
+          sizeLimit: 5Mi
+      - name: gateway-run
+        emptyDir:
+          medium: Memory
+          sizeLimit: 5Mi
+      - name: farcaster-tunnel-secrets
+        secret:
+          secretName: farcaster-tunnel-secrets
+          defaultMode: 256
+      - name: farcaster-gateway-secrets
+        secret:
+          secretName: farcaster-gateway-secrets
+          defaultMode: 256
+      terminationGracePeriodSeconds: 30
+  minReadySeconds: 2

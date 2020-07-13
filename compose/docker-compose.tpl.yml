@@ -1,0 +1,38 @@
+version: '3.3'
+
+services:
+  gateway:
+    image: {{DOCKER_IMAGE}}
+    container_name: gateway
+    command: /farcaster/bin/start-gateway.sh
+    volumes:
+    - {{SECRETS_PATH}}/gateway:/secrets/farcaster/data:z,ro
+    tmpfs:
+    - /run
+    read_only: true
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SETUID
+    - SETGID
+    restart: always
+
+  tunnel:
+    image: {{DOCKER_IMAGE}}
+    container_name: tunnel
+    command: /farcaster/bin/start-tunnel.sh
+    network_mode: service:gateway
+    volumes:
+    - {{SECRETS_PATH}}/tunnel:/secrets/farcaster/data:z,ro
+    tmpfs:
+    - /run
+    read_only: true
+    depends_on:
+    - gateway
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    restart: always
