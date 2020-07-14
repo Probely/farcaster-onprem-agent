@@ -1,6 +1,4 @@
-# Probely Agent for On-Premises Scans
-
-## Overview
+# Overview
 
 This document will guide you through the installation of the Probely
 Agent on your network.
@@ -21,9 +19,9 @@ The following diagram shows an example network topology depicting an on-premises
 network, the Agent, the Agent Hub (where on-premises Agents connect to),
 and Probely's infrastructure.
 
-![Image](https://probely.com/assets/images/Farcaster-Onprem-Agent.png)
+![Farcaster high-level network architecture](https://probely.com/assets/images/Farcaster-Onprem-Agent.png)
 
-## Security considerations
+# Security considerations
 
 Installing third-party software on a network carries an inherent risk.
 Being security professionals ourselves, we are very aware of this; that is why
@@ -68,7 +66,7 @@ components, such as [Wireguard](https://www.wireguard.com/).
 such as public IP addresses, complex firewall rules are unnecessary or minimized.
 * The Agent needs minimal hardware resources and is designed to scale easily.
 
-## System Resources
+# System Resources
 
 The agent is comprised of a set of Docker containers, which require relatively
 little system resources.
@@ -79,19 +77,19 @@ The following table contains the recommended minimum system resources.
 | ------- | ------- | ----------- |
 | 1       | 1 GB    | 5 GB        |
 
-## Network Requirements
+# Network Requirements
 
-### Internal Network Service
+## Internal Network Service
 
 The Agent requires a set of basic network services to exist on your network,
 which are detailed in the table below.
 
-| Name | Description                                                                                                                                           |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DHCP | An internal IP address automatically attributed by a DHCP server running your network                                                                 |
-| DNS  | A set of IP addresses that the agent can use to resolve internal DNS records. The DNS resolver server addresses should be provided by the DHCP server |
+| Name | Description                                                 |
+| ---- | ----------------------------------------------------------- |
+| DHCP | IP network details, routes, and DNS servers                 |
+| DNS  | For resolving internal DNS records                          |
 
-### Firewall rules
+## Firewall rules
 
 In the following table, we describe the required firewall rules.
 
@@ -112,11 +110,12 @@ means: *all ports from 1024 to 2048, inclusive*.
 | Update servers | `agent-ip` | `<alpine-update-servers>`   | `TCP`        | `1024:`         | `80`, `443`              |
 
 Notes:
+
 1. `<scan-target>` is the internal IP of the server of your web application.
-2. `<target-port>` is the service port of the server of your web application.
+1. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
 
-## Installation Instructions
+# Installation
 
 In this section, we describe three different methods to deploy the Agent on
 your network:
@@ -133,7 +132,7 @@ Docker containers. (e.g., a Kubernetes cluster).
 1. **Building the VM and containers from source**.
 Building from source allows controlling every aspect of the Probely Agent.
 
-### Option 1: Virtual appliance
+## Option 1: Virtual appliance
 
 The Agent VM is packaged as a ZIP archive, containing an Open Virtual Format
 (OVF) file, and a Virtual Machine Disk (VMDK).
@@ -162,9 +161,11 @@ The SSH server accepts connections from private IP address ranges only
 This is done to mitigate compromises by SSH botnets, if an unconfigured
 appliance is accidentally exposed to the Internet.
 The allowed SSH client IP ranges are:
+
   * `10.0.0.0/8`
   * `172.16.0.0/12`
   * `192.168.0.0/16`
+
 * After logging on the VM for the first time, you must change the default
 password.
 Be sure to choose a strong password. Ideally, you should disable password
@@ -181,23 +182,23 @@ to the [Installer](#installer) section.
 * To configure the Agent, run the following commands on the Agent Virtual
 Appliance:
 
-```bash
-chmod +x ./probely-agent-<id>.run
-sudo ./probely-agent-<id>.run
-```
+  ```bash
+  chmod +x ./probely-agent-<id>.run
+  sudo ./probely-agent-<id>.run
+  ```
 
 * Check that the agent connected successfully
 
 After starting the Agent, it should link-up with Probely. Run the following command:
-```bash
-sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
-```
+  ```bash
+  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
+  ```
 
 You should see a `latest handshake: N seconds/minutes ago` message.
 
 * You can now start scanning on-premises targets using Probely
 
-### Option 2: Docker containers
+## Option 2: Docker containers
 
 Please note that, in order achieve optimal performance, we recommend that you
 run the the container on a host with kernel support for
@@ -230,46 +231,46 @@ requirements met.
 * Run the following commands to extract the Agent keys and configuration files
 from the Agent installer:
 
-```bash
-chmod +x ./probely-agent-<id>.run
-./probely-agent-<id>.run --noexec --target ./probely-agent
-```
+  ```bash
+  chmod +x ./probely-agent-<id>.run
+  ./probely-agent-<id>.run --noexec --target ./probely-agent
+  ```
 
 * Start the Agent:
-```bash
-cd ./probely-agent
-./setup.sh --local
-docker-compose up
-```
+  ```bash
+  cd ./probely-agent
+  ./setup.sh --local
+  docker-compose up
+  ```
 
 * Check that the agent connected successfully
 
 After starting the Agent, it should link-up with Probely. Run the following command:
-```bash
-sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
-```
+  ```bash
+  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
+  ```
 
 You should see a `latest handshake: N seconds/minutes ago` message.
 
 * You can now start scanning on-premises targets using Probely.
 
-### Option 3: Building from source
+## Option 3: Building from source
 
 * Start by checking the code out from the repository:
-```bash
-git clone git@github.com:Probely/farcaster-onprem-agent.git
-```
+  ```bash
+  git clone git@github.com:Probely/farcaster-onprem-agent.git
+  ```
 
 **Unless otherwise specified, these instructions must be run on the repository
 root.**
 
-#### Containers
+### Containers
 
 * Build the containers:
 
-```bash
-make docker
-```
+  ```bash
+  make docker
+  ```
 
 * Push the container images to your Docker registry. Check the `push` 
 target on the provided [Makefile](/Makefile) for guidance.
@@ -278,7 +279,7 @@ Remember to reference your custom-built Docker images on any `docker-compose.yml
 file, or Kubernetes pod/deployment descriptor you configure. If not specified,
 the default Probely docker Agent images are used.
 
-#### Installer
+### Installer
 
 The installer build script expects a "config bundle" to exist. A config bundle
 is a set of configuration files and keys that allow the Agent to connect to
@@ -289,23 +290,23 @@ installer script tailored to your specific Agent.
 If you do not have the installer script, please contact Probely's support team.
 
 * First, extract the Agent configuration bundle from the original installer: 
-```
-chmod +x ./probely-agent-<id>.run
-./probely-agent-<id>.run --noexec --target ./tmp/agent-installer
-```
+  ```
+  chmod +x ./probely-agent-<id>.run
+  ./probely-agent-<id>.run --noexec --target ./tmp/agent-installer
+  ```
 
 * Re-create the config bundle:
-```bash
-tar -zcpvf ./tmp/<id>.tar.gz -C ./tmp/agent-installer/secrets .
-```
+  ```bash
+  tar -zcpvf ./tmp/<id>.tar.gz -C ./tmp/agent-installer/secrets .
+  ```
 
 The installer build script will ask you for a password to secure the secrets. 
 Please choose a strong password.
 
 * Create the new installer:
-```bash
-./installer/make-installer.sh ./tmp/<id>.tar.gz
-```
+  ```bash
+  ./installer/make-installer.sh ./tmp/<id>.tar.gz
+  ```
 
 The new installer will be placed in `installer/target/probely-agent-<id>.run`.
 
@@ -313,14 +314,16 @@ The new installer will be placed in `installer/target/probely-agent-<id>.run`.
 
 The installer reads the `DOCKER_IMAGE` environment variable. You can use it to
 specify your custom-built Docker images:
-```bash
-sudo DOCKER_IMAGE=<custom_image_url> ./installer/target/probely-agent-<id>.run
-```
+
+  ```bash
+  sudo DOCKER_IMAGE=<custom_image_url> ./installer/target/probely-agent-<id>.run
+  ```
 
 ### Virtual machine
 We use [Packer](https://packer.io) to build the Agent VM.
 
 Currently, we support the following builder types:
+
 * VirtualBox
 * VMWare
 * XEN
@@ -333,10 +336,10 @@ For example, to build the Agent VM using the VirtualBox builder, follow these st
 
 * Install [Packer](https://www.packer.io/intro/getting-started/install.html)
 * Run these commands:
-```bash
-cd vm/packer-templates/alpine3.12
-../build.sh virtualbox
-```
+  ```bash
+  cd vm/packer-templates/alpine3.12
+  ../build.sh virtualbox
+  ```
 
 After Packer finishes building the VM, you should have OVF and VMDK files
 available on the `output-virtualbox-iso` directory. Note that the output
