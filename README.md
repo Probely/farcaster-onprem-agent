@@ -190,6 +190,7 @@ Appliance:
 * Check that the agent connected successfully
 
 After starting the Agent, it should link-up with Probely. Run the following command:
+
   ```bash
   sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
   ```
@@ -237,6 +238,7 @@ from the Agent installer:
   ```
 
 * Start the Agent:
+
   ```bash
   cd ./probely-agent
   ./setup.sh --local
@@ -246,6 +248,7 @@ from the Agent installer:
 * Check that the agent connected successfully
 
 After starting the Agent, it should link-up with Probely. Run the following command:
+
   ```bash
   sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
   ```
@@ -257,6 +260,7 @@ You should see a `latest handshake: N seconds/minutes ago` message.
 ## Option 3: Building from source
 
 * Start by checking the code out from the repository:
+
   ```bash
   git clone git@github.com:Probely/farcaster-onprem-agent.git
   ```
@@ -290,12 +294,14 @@ installer script tailored to your specific Agent.
 If you do not have the installer script, please contact Probely's support team.
 
 * First, extract the Agent configuration bundle from the original installer: 
-  ```
+
+  ```bash
   chmod +x ./probely-agent-<id>.run
   ./probely-agent-<id>.run --noexec --target ./tmp/agent-installer
   ```
 
 * Re-create the config bundle:
+
   ```bash
   tar -zcpvf ./tmp/<id>.tar.gz -C ./tmp/agent-installer/secrets .
   ```
@@ -304,6 +310,7 @@ The installer build script will ask you for a password to secure the secrets.
 Please choose a strong password.
 
 * Create the new installer:
+
   ```bash
   ./installer/make-installer.sh ./tmp/<id>.tar.gz
   ```
@@ -336,6 +343,7 @@ For example, to build the Agent VM using the VirtualBox builder, follow these st
 
 * Install [Packer](https://www.packer.io/intro/getting-started/install.html)
 * Run these commands:
+
   ```bash
   cd vm/packer-templates/alpine3.12
   ../build.sh virtualbox
