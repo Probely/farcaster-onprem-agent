@@ -37,7 +37,7 @@ cp ${RUNDIR}/../compose/docker-compose.tpl.yml "${TMP_DIR}/docker-compose.yml"
 cd ${RUNDIR} && mkdir -p ${RUNDIR}/target && ./makeself/makeself.sh --gzip --ssl-encrypt --nomd5 --nocrc \
     --sha256 --license ${RUNDIR}/../LICENSE \
     ${TMP_DIR} \
-    ${RUNDIR}/target/probely-agent-${AGENTID}.run \
+    ${RUNDIR}/target/probely-onprem-agent-${AGENTID}.run \
     "Probely Farcaster Agent" \
     ./setup.sh
 
