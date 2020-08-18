@@ -27,18 +27,21 @@ sed -i "s#{{DOCKER_IMAGE}}#${DOCKER_IMAGE}#g" ./docker-compose.yml
 if [ "${INSTALL_INIT}" != "0" ]; then
     echo "Deploying the Agent init scripts..."
     mkdir -p "${DEPLOY_PATH}"
+    suffix=$(printf "%s.%s.bak" $(date "+%Y%m%d_%H%M.%S") ${RANDOM})
+    mv "${SECRETS_PATH}" "${SECRETS_PATH}.${suffix}" >/dev/null 2>&1 || true
+    rm -rf -- "${SECRETS_PATH}"
     mv ./secrets/ "${SECRETS_PATH}"
-    chmod -R go-rwx "${SECRETS_PATH}"
-    chown -R root:root "${SECRETS_PATH}"
+    chmod -R go-rwx -- "${SECRETS_PATH}"
+    chown -R root:root -- "${SECRETS_PATH}"
     svcname="probely-onprem-agent"
     compose_path=/var/lib/docker-compose/${svcname}
-    rm -rf ${compose_path}
+    rm -rf -- ${compose_path}
     mkdir -p ${compose_path}
     mv ./docker-compose.yml ${compose_path}
     rm -f /etc/init.d/docker-compose.${svcname}
     ln -s /etc/init.d/docker-compose /etc/init.d/docker-compose.${svcname}
     rc-update add docker-compose.${svcname} default
-    /etc/init.d/docker-compose.${svcname} start
+    /etc/init.d/docker-compose.${svcname} restart
 else
     echo "Deploying the Agent on this path..."
 fi
