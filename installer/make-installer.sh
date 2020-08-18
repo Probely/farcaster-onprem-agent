@@ -26,7 +26,7 @@ make_tmp_dir() {
     echo ${tmp}
 }
 
-AGENTID=$(basename ${CONFIG_BUNDLE} | sed s/.tar.gz$//)
+AGENTID=$(basename ${CONFIG_BUNDLE} | sed "s/onprem-\(\w*\)\.tar\.gz$/\1/")
 TMP_DIR=$(make_tmp_dir)
 
 mkdir -p "${TMP_DIR}/secrets/"
@@ -38,7 +38,7 @@ cd ${RUNDIR} && mkdir -p ${RUNDIR}/target && ./makeself/makeself.sh --gzip --ssl
     --sha256 --license ${RUNDIR}/../LICENSE \
     ${TMP_DIR} \
     ${RUNDIR}/target/probely-onprem-agent-${AGENTID}.run \
-    "Probely Farcaster Agent" \
+    "Probely On-premises Farcaster Agent" \
     ./setup.sh
 
 rm -rf "${TMP_DIR}"
