@@ -6,7 +6,7 @@ echo http://dl-cdn.alpinelinux.org/alpine/v3.12/community >> /etc/apk/repositori
 apk upgrade -U --available
 
 # Base packages
-apk add apk-cron curl dmidecode
+apk add apk-cron curl dmidecode patch
 
 source /etc/os-release
 

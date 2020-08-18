@@ -2,6 +2,33 @@ set -ex
 
 apk add docker
 rc-update add docker default
+
+cat << 'EOF' | (cd /etc/init.d && patch -p0)
+--- docker.orig
++++ docker
+@@ -18,11 +18,18 @@
+ 
+ retry="${DOCKER_RETRY:-TERM/60/KILL/10}"
+ 
++set_http_proxies() {
++	while read -r line; do
++		echo "${line}" | grep -q "^HTTP" && export ${line}
++	done < /etc/environment
++}
++
+ depend() {
+ 	need sysfs cgroups
+ }
+ 
+ start_pre() {
++	set_http_proxies
+ 	checkpath -f -m 0644 -o root:docker "$DOCKER_ERRFILE" "$DOCKER_OUTFILE"
+ }
+EOF
+
+echo "#HTTP_PROXY=http://proxy.example.com" >> /etc/environment
+echo "#HTTPS_PROXY=https://proxy.example.com" >> /etc/environment
+
 mkdir -p /var/lib/docker-compose
 
 cat << 'EOF' > /etc/init.d/docker-compose
@@ -18,7 +45,7 @@ docker_compose="/usr/bin/docker run \
 docker/compose:1.26.2"
 
 depend() {
-    after docker
+    need docker
 }
 
 checkconfig() {
@@ -31,6 +58,17 @@ checkconfig() {
 
 start() {
     checkconfig || return 1
+
+    ebegin "Waiting for Docker to be ready"
+    is_ready=0
+    for i in $(seq 20); do
+        docker version >/dev/null 2>&1 && is_ready=1 && break
+        sleep 1
+    done
+    if [ ${is_ready} -ne 1 ]; then
+        return 1
+    fi
+    eend 0
 
     ebegin "Starting ${SVCNAME}"
     cd "$compose_dir" || return 1
