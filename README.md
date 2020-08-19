@@ -67,7 +67,7 @@ such as public IP addresses, complex firewall rules are unnecessary or minimized
 
 # System Resources
 
-The agent is comprised of a set of Docker containers, which require relatively
+The Agent is comprised of a set of Docker containers, which require relatively
 little system resources.
 
 The following table contains the recommended minimum system resources.
@@ -193,8 +193,8 @@ Machine. Note that you will be prompted for a password
   sudo ./probely-onprem-agent-<id>.run
   ```
 
-  > If you are using an HTTP proxy to reach the internet, you can configure Docker
-  > to use the proxy to pull container images, by setting the `HTTP` or `HTTPS`
+  > If using an HTTP proxy to reach the Internet, you can instruct Docker
+  > to pull container images through the proxy, by setting the `HTTP` or `HTTPS`
   > variables in the `/etc/environment` file. Afterwards, run these commands:
   >
   >  ```sh
@@ -202,7 +202,7 @@ Machine. Note that you will be prompted for a password
   >  /etc/init.d/docker-compose.probely-onprem-agent restart
   >  ```
 
-* Check that the agent connected successfully
+* Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
 
@@ -212,7 +212,7 @@ Machine. Note that you will be prompted for a password
 
   You should see a `latest handshake: N seconds/minutes ago` message.
 
-  > If the agent is not connecting, please ensure that your [firewall](#firewall-rules)
+  > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
 
   **You can now start scanning on-premises targets using Probely**
@@ -265,7 +265,7 @@ from the Agent installer. Note that you will be prompted for a password
   docker-compose up
   ```
 
-* Check that the agent connected successfully
+* Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
 
@@ -275,7 +275,7 @@ from the Agent installer. Note that you will be prompted for a password
 
   You should see a `latest handshake: N seconds/minutes ago` message.
 
-  > If the agent is not connecting, please ensure that your [firewall](#firewall-rules)
+  > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
 
  **You can now start scanning on-premises targets using Probely.**
