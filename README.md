@@ -155,31 +155,34 @@ The VM archive name is `probely-onprem-agent-vm-<version>.zip`
 
 * After the VM boots, use the default Agent credentials to log in
 (user: `probely`, password: `changeme`)
-You can log into the VM on the local console, or via SSH
-(IP is assigned via DHCP).
-The SSH server accepts connections from private IP address ranges only
-(see which ones below).
-This is done to mitigate compromises by SSH botnets, if an unconfigured
-Agent VM is accidentally exposed to the Internet.
-The allowed SSH client IP ranges are:
 
-  * `10.0.0.0/8`
-  * `172.16.0.0/12`
-  * `192.168.0.0/16`
+  You can log into the VM on the local console, or via SSH
+  (IP is assigned via DHCP).
+  The SSH server accepts connections from private IP address ranges only
+  (see which ones below).
+  This is done to mitigate compromises by SSH botnets, if an unconfigured
+  Agent VM is accidentally exposed to the Internet.
+  The allowed SSH client IP ranges are:
 
-* After logging on the VM for the first time, you must change the default
-password.
-Be sure to choose a strong password. Ideally, you should disable password
-logins via SSH, and enforce authentication using public keys or certificates.
-Enabling SSH public-key authentication is outside the scope of this document,
-but we can assist you in doing so through the support channels.
+    * `10.0.0.0/8`
+    * `172.16.0.0/12`
+    * `192.168.0.0/16`
+
+* After logging on the VM for the first time, change the default password.
+
+  Be sure to choose a strong password. Ideally, you should disable password
+  logins via SSH, and enforce authentication using public keys or certificates.
+  Enabling SSH public-key authentication is outside the scope of this document,
+  but we can assist you in doing so through the support channels.
 
 * You should have been given a `probely-onprem-agent-<id>.run` file, which is an
-installer script tailored to your specific Agent. The installer is password-protected.
-If you do not have the installer script, or its password, please contact
-Probely's support team.
-If you want to know how the installer is built and what it does, please refer
-to the [Installer](#installer) section.
+installer script tailored to your specific Agent.
+
+  The installer is password-protected.
+  If you do not have the installer script, or its password, please contact
+  Probely's support team.
+  If you want to know how the installer is built and what it does, please refer
+  to the [Installer](#installer) section.
 
 * To configure the Agent, run the following commands on the Agent Virtual
 Machine. Note that you will be prompted for a password
@@ -190,17 +193,29 @@ Machine. Note that you will be prompted for a password
   sudo ./probely-onprem-agent-<id>.run
   ```
 
+  > If you are using an HTTP proxy to reach the internet, you can configure Docker
+  > to use the proxy to pull container images, by setting the `HTTP` or `HTTPS`
+  > variables in the `/etc/environment` file. Afterwards, run these commands:
+  >
+  >  ```sh
+  >  /etc/init.d/docker restart
+  >  /etc/init.d/docker-compose.probely-onprem-agent restart
+  >  ```
+
 * Check that the agent connected successfully
 
-After starting the Agent, it should link-up with Probely. Run the following command:
+  After starting the Agent, it should link-up with Probely. Run the following command:
 
   ```bash
   sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
   ```
 
-You should see a `latest handshake: N seconds/minutes ago` message.
+  You should see a `latest handshake: N seconds/minutes ago` message.
 
-* You can now start scanning on-premises targets using Probely
+  > If the agent is not connecting, please ensure that your [firewall](#firewall-rules)
+  > is properly configured.
+
+  **You can now start scanning on-premises targets using Probely**
 
 ## Option 2: Docker containers
 
@@ -252,15 +267,18 @@ from the Agent installer. Note that you will be prompted for a password
 
 * Check that the agent connected successfully
 
-After starting the Agent, it should link-up with Probely. Run the following command:
+  After starting the Agent, it should link-up with Probely. Run the following command:
 
   ```bash
   sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
   ```
 
-You should see a `latest handshake: N seconds/minutes ago` message.
+  You should see a `latest handshake: N seconds/minutes ago` message.
 
-* You can now start scanning on-premises targets using Probely.
+  > If the agent is not connecting, please ensure that your [firewall](#firewall-rules)
+  > is properly configured.
+
+ **You can now start scanning on-premises targets using Probely.**
 
 ## Option 3: Building from source
 
