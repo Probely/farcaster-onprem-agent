@@ -239,7 +239,7 @@ the agent.
 You can also use the `docker-compose.yml` file as a reference to deploy the Agent
 to a container orchestrator, such as [Kubernetes](https://kubernetes.io/).
 We provide an example Agent Kubernetes deployment
-[here](https://github.com/probely/farcaster-onprem-agent/kubernetes/).
+[here](https://github.com/probely/farcaster-onprem-agent/tree/master/kubernetes/).
 If you need help setting the Agent up on a Kubernetes cluster, please contact
 Probely's support team.
 
