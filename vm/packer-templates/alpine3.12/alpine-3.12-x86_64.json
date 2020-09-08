@@ -92,6 +92,43 @@
       "ssh_username": "root",
       "type": "qemu",
       "vm_name": "probely-remote-agent"
+    },
+    {
+      "boot_command": [
+        "root<enter><wait>",
+        "ifconfig eth0 up \u0026\u0026 udhcpc -i eth0<enter><wait10>",
+        "wget http://{{ .HTTPIP }}:{{ .HTTPPort }}/answers<enter><wait>",
+        "sed -i s#__DISK_DEVICE__#/dev/sda# $PWD/answers<enter><wait>",
+        "setup-alpine -f $PWD/answers<enter><wait5>",
+        "only-used-during-build<enter><wait>",
+        "only-used-during-build<enter><wait>",
+        "<wait10><wait10><wait10>",
+        "y<enter>",
+        "<wait10><wait10><wait10>",
+        "<wait10><wait10><wait10>",
+        "rc-service sshd stop<enter>",
+        "mount /dev/sda2 /mnt<enter>",
+        "echo 'PermitRootLogin yes' >> /mnt/etc/ssh/sshd_config<enter>",
+        "umount /mnt<enter>",
+        "reboot<enter>"
+      ],
+      "boot_wait": "30s",
+      "communicator": "ssh",
+      "disk_size": "{{user `disk_size`}}",
+      "guest_os_type": "Linux26_64",
+      "headless": false,
+      "http_directory": "http",
+      "iso_checksum": "sha256:{{user `iso_checksum`}}",
+      "iso_urls": [
+        "{{user `iso`}}",
+        "{{user `iso_url`}}"
+      ],
+      "shutdown_command": "/sbin/poweroff",
+      "ssh_password": "only-used-during-build",
+      "ssh_timeout": "10m",
+      "ssh_username": "root",
+      "type": "vmware-iso",
+      "format": "ova"
     }
   ],
   "description": "Probely Alpine Linux x86_64",
