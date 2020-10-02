@@ -22,14 +22,36 @@ spec:
                   app: probely-onprem-agent
               topologyKey: kubernetes.io/hostname
       containers:
-      - name: tunnel
-        image: __DOCKER_IMAGE__
-        env:
-        - name: FARCASTER_AGENT_HUB
-          value: hub.farcaster.probely.com:443
-        - name: FARCASTER_REMOTE_GATEWAY
-          value: 127.0.0.1:2222
+      - name: gateway
+        image: probely/farcaster-onprem-agent
         command:
+        - /busybox/sh
+        - /farcaster/bin/start-gateway.sh
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - SETUID
+            - SETGID
+        volumeMounts:
+        - name: gateway-run
+          mountPath: /run
+        - name: farcaster-gateway-secrets
+          mountPath: /secrets/farcaster/data
+          readOnly: true
+      - name: tunnel
+        image: probely/farcaster-onprem-agent
+        command:
+        - /busybox/sh
         - /farcaster/bin/start-tunnel.sh
         imagePullPolicy: IfNotPresent
         resources:
@@ -42,48 +64,14 @@ spec:
             drop:
             - ALL
             add:
-            - SETUID
-            - SETGID
-            - CHOWN
-            - FOWNER
+            - NET_ADMIN
         volumeMounts:
         - name: tunnel-run
           mountPath: /run
         - name: farcaster-tunnel-secrets
-          mountPath: /farcaster/restricted/secrets
+          mountPath: /secrets/farcaster/data
           readOnly: true
-      - name: gateway
-        image: __DOCKER_IMAGE__
-        env:
-        - name: FARCASTER_AGENT_HUB
-          value: hub.farcaster.probely.com:443
-        - name: FARCASTER_REMOTE_GATEWAY
-          value: 127.0.0.1:2222
-        command:
-        - /farcaster/bin/start-gateway.sh
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            cpu: 500m
-            memory: 512Mi
-        securityContext:
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-            add:
-            - SETUID
-            - SETGID
-            - CHOWN
-            - FOWNER
-            - SYS_CHROOT
-            - KILL
-        volumeMounts:
-        - name: gateway-run
-          mountPath: /run
-        - name: farcaster-gateway-secrets
-          mountPath: /farcaster/restricted/secrets
-          readOnly: true
+
       volumes:
       - name: tunnel-run
         emptyDir:
