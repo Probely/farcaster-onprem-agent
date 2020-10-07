@@ -37,6 +37,7 @@ RUN set -eux \
 FROM gcr.io/distroless/base-debian10:debug
 COPY --from=builder /farcaster/. /farcaster/
 COPY --from=rust_builder /build/boringtun/target/release/boringtun /farcaster/bin/
+COPY --from=rust_builder /lib/x86_64-linux-gnu/libgcc_s.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1
 COPY ./bin/. /farcaster/bin/
 RUN ["/busybox/sh", "-c", "set -eux \
     && umask 077 \
