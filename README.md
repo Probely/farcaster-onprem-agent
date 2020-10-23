@@ -1,9 +1,8 @@
 # Overview
 
-This document will guide you through the installation of the Probely
-Agent on your network.
+This document will guide you through the installation of the Farcaster Agent on your network.
 
-The Agent connects Probely to (the parts that you choose of) your on-premises
+The Farcaster Agent connects Probely to (the parts that you choose of) your on-premises
 network.
 This broadens Probely's vulnerability scanning capabilities to internal
 applications.
@@ -131,7 +130,7 @@ This option might be preferable if you have the infrastructure to support runnin
 Docker containers. (e.g. a Kubernetes cluster).
 
 1. **Building the VM and containers from source**.
-Building from source allows controlling every aspect of the Probely Agent.
+Building from source allows controlling every aspect of the Farcaster Agent.
 
 ## Option 1: Virtual Machine
 
