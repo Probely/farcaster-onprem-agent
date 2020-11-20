@@ -29,6 +29,7 @@ RUN set -eux \
     && ./install-iptables.sh /farcaster \
     && ./install-dnsmasq.sh /farcaster \
     && ./install-bash.sh /farcaster \
+    && ./install-dnsutils.sh /farcaster \
     && ln -s /secrets/farcaster/data/wg-tunnel.conf /farcaster/etc/ \
     && ln -s /secrets/farcaster/data/wg-gateway.conf /farcaster/etc/ \
     && cp -a /usr/bin/wg* /farcaster/bin/ \

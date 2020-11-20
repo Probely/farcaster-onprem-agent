@@ -8,7 +8,7 @@ export XTABLES_LIBDIR="${FARCASTER_PATH}"/lib/xtables
 export PATH="${FARCASTER_PATH}"/sbin:"${FARCASTER_PATH}"/bin:${PATH}
 
 . "${FARCASTER_PATH}/bin/_lib.sh"
-. "${FARCASTER_PATH}/bin/_common.sh"
+. "${FARCASTER_PATH}/bin/_env.sh"
 
 # Firewall and NAT rules
 iptables -N FARCASTER-FILTER
