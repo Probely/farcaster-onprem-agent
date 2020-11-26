@@ -215,10 +215,19 @@ Machine. Note that you will be prompted for a password
 
   You should see a `latest handshake: N seconds/minutes ago` message.
 
+  If so, **you can start scanning on-premises targets using Probely**
+
+  If not, check if Wireguard is connecting to the agent Hub:
+  
+  ```bash
+  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "transfer"
+  ````
+  
+  If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
+  suggests that there is a network/firewall configuration issue.
+
   > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
-
-  **You can now start scanning on-premises targets using Probely**
 
 ## Option 2: Docker containers
 
@@ -278,10 +287,19 @@ from the Agent installer. Note that you will be prompted for a password
 
   You should see a `latest handshake: N seconds/minutes ago` message.
 
+  If so, **you can start scanning on-premises targets using Probely.**
+
+  If not, check if Wireguard is connecting to the agent Hub:
+  
+  ```bash
+  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "transfer"
+  ````
+  
+  If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
+  suggests that there is a network/firewall configuration issue.
+
   > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
-
- **You can now start scanning on-premises targets using Probely.**
 
 ## Option 3: Building from source
 
