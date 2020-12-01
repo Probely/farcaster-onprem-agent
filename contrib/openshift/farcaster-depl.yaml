@@ -33,15 +33,18 @@ spec:
             cpu: 250m
             memory: 128Mi
         securityContext:
+          privileged: true
           readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
             add:
+            - DAC_OVERRIDE
             - NET_ADMIN
             - NET_RAW
             - SETUID
             - SETGID
+            - MKNOD
         volumeMounts:
         - name: gateway-run
           mountPath: /run
@@ -59,12 +62,15 @@ spec:
             cpu: 250m
             memory: 128Mi
         securityContext:
+          privileged: true
           readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
             add:
+            - DAC_OVERRIDE
             - NET_ADMIN
+            - MKNOD
         volumeMounts:
         - name: tunnel-run
           mountPath: /run

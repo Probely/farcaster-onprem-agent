@@ -38,6 +38,7 @@ spec:
             drop:
             - ALL
             add:
+            - DAC_OVERRIDE
             - NET_ADMIN
             - NET_RAW
             - SETUID
@@ -48,8 +49,6 @@ spec:
         - name: farcaster-gateway-secrets
           mountPath: /secrets/farcaster/data
           readOnly: true
-        - name: host-tun-dev
-          mountPath: /dev/net/tun
       - name: tunnel
         image: probely/farcaster-onprem-agent:latest
         command:
@@ -66,6 +65,7 @@ spec:
             drop:
             - ALL
             add:
+            - DAC_OVERRIDE
             - NET_ADMIN
         volumeMounts:
         - name: tunnel-run
@@ -73,8 +73,6 @@ spec:
         - name: farcaster-tunnel-secrets
           mountPath: /secrets/farcaster/data
           readOnly: true
-        - name: host-tun-dev
-          mountPath: /dev/net/tun
 
       volumes:
       - name: tunnel-run
@@ -93,9 +91,5 @@ spec:
         secret:
           secretName: farcaster-gateway-secrets
           defaultMode: 256
-      - name: host-tun-dev
-        hostPath:
-          path: /dev/net/tun
-          type: CharDevice
       terminationGracePeriodSeconds: 30
   minReadySeconds: 2

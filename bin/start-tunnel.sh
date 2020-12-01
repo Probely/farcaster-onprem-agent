@@ -13,7 +13,8 @@ export PATH="${FARCASTER_PATH}"/sbin:"${FARCASTER_PATH}"/bin:${PATH}
 rc=1
 if start_wireguard "${WG_TUN_IF}"; then
     set +x
-    rc=$(watch_wireguard "${WG_TUN_IF}")
+    check_hub=1
+    rc=$(watch_wireguard "${WG_TUN_IF}" ${check_hub})
 fi
 sleep 5
 exit ${rc}

@@ -13,10 +13,12 @@ services:
     cap_drop:
     - ALL
     cap_add:
+    - DAC_OVERRIDE
     - NET_ADMIN
     - NET_RAW
     - SETUID
     - SETGID
+    - MKNOD
     restart: always
 
   tunnel:
@@ -34,5 +36,7 @@ services:
     cap_drop:
     - ALL
     cap_add:
+    - DAC_OVERRIDE
     - NET_ADMIN
+    - MKNOD
     restart: always

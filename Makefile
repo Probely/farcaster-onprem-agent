@@ -4,9 +4,9 @@ CONTAINER=farcaster-onprem-agent
 
 docker:
 	docker build -f docker/Dockerfile -t $(CONTAINER) .
+	docker tag $(CONTAINER):latest probely/$(CONTAINER):latest
 
 push: docker
-	docker tag $(CONTAINER):latest probely/$(CONTAINER):latest
 	docker push probely/$(CONTAINER):latest
 
 clean:

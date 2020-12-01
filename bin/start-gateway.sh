@@ -15,9 +15,9 @@ iptables -N FARCASTER-FILTER
 iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
 iptables -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
-    --ctstate ESTABLISHED,RELATED -j ACCEPT
+	--ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
-    --ctstate ESTABLISHED,RELATED -j ACCEPT
+	--ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
 
 iptables -F INPUT
@@ -45,17 +45,19 @@ mkdir -p ${rundir}
 chown -R root:root ${rundir}
 chmod 0711 ${rundir}
 dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
+gw_addr="$(get_wg_addr "${WG_GW_IF}")"
 for proto in tcp udp; do
-    iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
-        --dport 53 -j REDIRECT --to-port "${lport}"
-    iptables -t filter -A INPUT -i "${WG_GW_IF}" -p ${proto} \
-        --dport "${lport}" -j ACCEPT
+	iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
+		--dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
+	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
+		-d "${gw_addr}" --dport "${lport}" -j ACCEPT
 done
 
 rc=1
 if start_wireguard "${WG_GW_IF}"; then
     set +x
-    rc=$(watch_wireguard "${WG_GW_IF}")
+    check_hub=0
+    rc=$(watch_wireguard "${WG_GW_IF}" ${check_hub})
 fi
 sleep 5
 exit ${rc}
