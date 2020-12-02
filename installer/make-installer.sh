@@ -32,7 +32,7 @@ TMP_DIR=$(make_tmp_dir)
 mkdir -p "${TMP_DIR}/secrets/"
 tar -xpzvf "${CONFIG_BUNDLE}" --strip 1 -C "${TMP_DIR}/secrets/"
 cp ${RUNDIR}/setup.sh "${TMP_DIR}"
-cp ${RUNDIR}/../compose/docker-compose.tpl.yml "${TMP_DIR}/docker-compose.yml"
+cp ${RUNDIR}/../compose/docker-compose.tpl.yml "${TMP_DIR}/"
 
 cd ${RUNDIR} && mkdir -p ${RUNDIR}/target && ./makeself/makeself.sh --gzip --ssl-encrypt --nomd5 --nocrc \
     --sha256 --license ${RUNDIR}/../LICENSE \

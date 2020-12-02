@@ -21,8 +21,10 @@ SECRETS_PATH="${DEPLOY_PATH}/secrets"
 
 set -u
 
-sed -i "s#{{SECRETS_PATH}}#${SECRETS_PATH}#g" ./docker-compose.yml
-sed -i "s#{{DOCKER_IMAGE}}#${DOCKER_IMAGE}#g" ./docker-compose.yml
+cat ./docker-compose.tpl.yml \
+	| sed -e "s#{{SECRETS_PATH}}#${SECRETS_PATH}#g" \
+	| sed -e "s#{{DOCKER_IMAGE}}#${DOCKER_IMAGE}#g" \
+	> docker-compose.yml
 
 if [ "${INSTALL_INIT}" != "0" ]; then
     echo "Deploying the Agent init scripts..."
