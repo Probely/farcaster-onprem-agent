@@ -44,7 +44,6 @@ spec:
             - NET_RAW
             - SETUID
             - SETGID
-            - MKNOD
         volumeMounts:
         - name: gateway-run
           mountPath: /run
@@ -70,7 +69,6 @@ spec:
             add:
             - DAC_OVERRIDE
             - NET_ADMIN
-            - MKNOD
         volumeMounts:
         - name: tunnel-run
           mountPath: /run

@@ -8,9 +8,12 @@ start_wireguard() {
 	iface="$1"
 	conf="${FARCASTER_PATH}/etc/${iface}.conf"
 
-	test -e "${conf}" || return 1
+	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
 
-	setup_wireguard_iface "${iface}"
+	if ! setup_wireguard_iface "${iface}"; then
+        echo "Error setting up Wireguard interface!"
+        return 1
+    fi
 
 	WG_QUICK_USERSPACE_IMPLEMENTATION=boringtun \
 		WG_SUDO=1 \

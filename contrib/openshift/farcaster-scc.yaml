@@ -11,7 +11,6 @@ allowedCapabilities:
 - SETUID
 - SETGID
 - DAC_OVERRIDE
-- MKNOD
 apiVersion: security.openshift.io/v1
 defaultAddCapabilities: null
 fsGroup:
@@ -27,6 +26,7 @@ priority: null
 readOnlyRootFilesystem: true
 requiredDropCapabilities:
 - KILL
+- MKNOD
 runAsUser:
   type: RunAsAny
 seLinuxContext:
