@@ -121,22 +121,26 @@ file.
 
 # Installation
 
-In this section, we describe three different methods to deploy the Agent on
-your network:
+We provide three methods to deploy the Agent on your network.
+Please note that only option **1** is officially supported, and has
+seen the most testing.
 
 1. **Using a pre-built VM**.
 The VM contains everything required to run the Agent.
-This may be a simpler approach, if you already have a virtualization solution
-running (Hyper-V, KVM, VirtualBox, VMWare, among others).
+This should be a simpler approach, if you already have a virtualization solution
+running (Hyper-V, KVM, VirtualBox, VMWare, among others). This is the officially
+supported method.
 
 1. **Running the containers directly**.
-This option might be preferable if you have the infrastructure to support running
-Docker containers. (e.g. a Kubernetes cluster).
+If you have the infrastructure to run Docker containers.
+(Docker, Podman, Kubernetes, OpenShift, among other), you can run the containers
+directly. This option is not officially supported, but we would love to hear your feedback if
+you are running the agent this way.
 
 1. **Building the VM and containers from source**.
 Building from source allows controlling every aspect of the Farcaster Agent.
 
-## Option 1: Virtual Machine
+## Option 1: Virtual Machine (recommended)
 
 The Agent VM is packaged as a ZIP archive, containing an Open Virtual Format
 (OVF) file, and a Virtual Machine Disk (VMDK).
@@ -231,10 +235,12 @@ Machine. Note that you will be prompted for a password
 
 ## Option 2: Docker containers
 
-Please note that, in order achieve optimal performance, we recommend that you
-run the the container on a host with kernel support for
-[Wireguard](https://www.wireguard.com/install/).
-If the host does not have the Wireguard kernel module loaded, the Agent will use
+Note: this option is not officially supported, and may require setting additional
+options to work on some environments.
+
+For optimal performance, you should run the the container on a host with kernel support
+for [Wireguard](https://www.wireguard.com/install/).
+If Wireguard support is not detected, the Agent will use
 [boringtun](https://github.com/cloudflare/boringtun) as a fallback option.
 
 You should have been given a `probely-onprem-agent-<id>.run` file, which is an
