@@ -8,7 +8,7 @@ if [ "$1" == "--local" ]; then
     INSTALL_INIT=0
 else
     if [ "$(id -u)" != "0" ]; then
-        echo "Sorry, but you need root privileges to run the installer."
+        echo "Sorry, but you need root privileges to run the installer"
         echo
         exit 1
     fi
@@ -28,6 +28,7 @@ cat ./docker-compose.tpl.yml \
 
 if [ "${INSTALL_INIT}" != "0" ]; then
     echo "Deploying the Agent init scripts..."
+    grep -q "tun" /etc/modules || { modprobe tun; echo "tun" >> /etc/modules; }
     mkdir -p "${DEPLOY_PATH}"
     suffix=$(printf "%s.%s.bak" $(date "+%Y%m%d_%H%M.%S") ${RANDOM})
     mv "${SECRETS_PATH}" "${SECRETS_PATH}.${suffix}" >/dev/null 2>&1 || true
