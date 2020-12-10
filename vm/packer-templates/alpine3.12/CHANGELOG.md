@@ -7,6 +7,9 @@
 * [Packer template](https://github.com/Probely/packer-templates/farcaster-alpine3.10)
 
 ## Changes
+* 3.12.1
+  * Upgrade to Alpine v3.12.1
+
 * v3.12.0p1
   * Support HTTP proxies for pulling Docker images
   * Ensure that docker-compose waits until Docker is ready
