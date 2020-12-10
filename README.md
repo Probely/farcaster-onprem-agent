@@ -167,8 +167,8 @@ The VM archive name is `probely-onprem-agent-vm-<version>.zip`
   (IP is assigned via DHCP).
   The SSH server accepts connections from private IP address ranges only
   (see which ones below).
-  This is done to mitigate compromises by SSH botnets, if an unconfigured
-  Agent VM is accidentally exposed to the Internet.
+  This is done to mitigate potential compromises of unconfigured agent VMs.
+  
   The allowed SSH client IP ranges are:
 
     * `10.0.0.0/8`
