@@ -20,3 +20,14 @@ Alpine systems and development.
 See <http://wiki.alpinelinux.org>
 
 EOF
+
+cat << EOF >> /etc/modules
+tun
+veth
+wireguard
+nf_tables
+nft_chain_nat
+nft_compat
+nft_counter
+xt_nat
+EOF
