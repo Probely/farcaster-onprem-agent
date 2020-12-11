@@ -26,8 +26,18 @@ cat << 'EOF' | (cd /etc/init.d && patch -p0)
  }
 EOF
 
-echo "#HTTP_PROXY=http://proxy.example.com" >> /etc/environment
-echo "#HTTPS_PROXY=https://proxy.example.com" >> /etc/environment
+
+cat << EOF >> /etc/environment
+# If configured, the VM will use an HTTP(S) proxy for:
+#  * Downloading Docker images
+#  * System updates
+#
+# NOTE: even if the proxy is enabled, the VM still requires access to
+# hub.farcaster.probely.com on UDP port 443 for the Wireguard tunnel
+#HTTP_PROXY=http://proxy.example.com
+#HTTPS_PROXY=https://proxy.example.com
+
+EOF
 
 mkdir -p /var/lib/docker-compose
 
