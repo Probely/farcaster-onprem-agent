@@ -115,9 +115,11 @@ The same goes if the target login URL is served from a different internal web ap
 2. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
 3. The IP addresses of these hosts are subject to change. We recommend allowing 
-web access for the agent VM (http and https ports). If this is not possible, the agent VM
-can use an http proxy server to reach the web. The proxy can be set in the `/etc/environment`
-file.
+web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent VM
+can use an HTTP proxy server to reach the web. The proxy can be set in the `/etc/environment`
+file. **Please note that the proxy is used for web access only. The agent still needs access
+to hub.farcaster.probely.com on UDP port 443, even if the proxy is enabled.**
+
 
 # Installation
 
@@ -202,7 +204,11 @@ Machine. Note that you will be prompted for a password
 
   > If using an HTTP proxy to reach the Internet, you can instruct Docker
   > to pull container images through the proxy, by setting the `HTTP` or `HTTPS`
-  > variables in the `/etc/environment` file. Afterwards, run these commands:
+  > variables in the `/etc/environment` file.
+  >  **Please note that the proxy is used for web access only. The agent still
+  > needs access to hub.farcaster.probely.com on UDP port 443, even if the proxy is
+  > enabled.**
+  > Afterwards, run these commands:
   >
   >  ```sh
   >  /etc/init.d/docker restart
