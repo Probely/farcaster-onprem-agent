@@ -18,7 +18,7 @@ The following diagram shows an example network topology depicting an on-premises
 network, the Agent, the Agent Hub (where on-premises Agents connect to),
 and Probely's infrastructure.
 
-![Farcaster high-level network architecture](https://probely.com/assets/images/Farcaster-Onprem-Agent.png)
+![Farcaster high-level network architecture](https://probely.com/assets/media/img_farcaster.png)
 
 # Security considerations
 
