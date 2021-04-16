@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -euo pipefail
 
@@ -15,12 +15,11 @@ start_wireguard() {
         return 1
     fi
 
-	WG_QUICK_USERSPACE_IMPLEMENTATION=boringtun \
-		WG_SUDO=1 \
-		WG_THREADS=2 \
-		WG_LOG_LEVEL=info WG_LOG_FILE=/dev/stdout \
-		WG_ERR_LOG_FILE=/dev/stderr \
-		bash "${FARCASTER_PATH}/bin/wg-quick" up "${conf}"
+	WG_SUDO=1 \
+	WG_THREADS=2 \
+	WG_LOG_LEVEL=info WG_LOG_FILE=/dev/stdout \
+	WG_ERR_LOG_FILE=/dev/stderr \
+	wg-quick up "${conf}"
 }
 
 get_wg_endpoint() {

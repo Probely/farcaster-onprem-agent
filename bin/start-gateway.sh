@@ -1,10 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
 set -euxo pipefail
 
 export FARCASTER_PATH=/farcaster
-export LD_LIBRARY_PATH="${FARCASTER_PATH}"/lib
-export XTABLES_LIBDIR="${FARCASTER_PATH}"/lib/xtables
 export PATH="${FARCASTER_PATH}"/sbin:"${FARCASTER_PATH}"/bin:${PATH}
 
 . "${FARCASTER_PATH}/bin/_lib.sh"

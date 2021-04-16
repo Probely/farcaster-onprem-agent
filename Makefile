@@ -1,13 +1,14 @@
 CONTAINER=farcaster-onprem-agent
+TAG=dev
 
 .PHONY: all docker push clean ssh_configs
 
 docker:
-	docker build -f docker/Dockerfile -t $(CONTAINER) .
-	docker tag $(CONTAINER):latest probely/$(CONTAINER):latest
+	docker build -f docker/Dockerfile -t $(CONTAINER):$(TAG) .
+	docker tag $(CONTAINER):$(TAG) probely/$(CONTAINER):$(TAG)
 
 push: docker
-	docker push probely/$(CONTAINER):latest
+	docker push probely/$(CONTAINER):$(TAG)
 
 clean:
 	docker rm -f $(CONTAINER) 2>/dev/null || true

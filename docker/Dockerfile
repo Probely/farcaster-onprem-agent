@@ -1,48 +1,33 @@
-FROM rust:slim AS rust_builder
-WORKDIR /build
-RUN set -eux \
-    && umask 077 \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends --no-install-suggests \
-        git \
-    && git clone https://github.com/cloudflare/boringtun.git \
-    && cd boringtun \
-    && cargo build --release \
-    && strip ./target/release/boringtun
+FROM golang:1.16-alpine as builder
 
-FROM debian:buster-slim AS builder
-WORKDIR /build
-COPY ./builder/. /build/
+ARG wg_go_tag=0.0.20210323
+ARG wg_tools_tag=v1.0.20210315
+
+ENV WITH_WGQUICK=yes
+RUN set -eux \
+	&& apk add --update git build-base libmnl-dev iptables \
+	&& git clone https://git.zx2c4.com/wireguard-go \
+	&& cd wireguard-go \
+    && git checkout -b $wg_go_tag \
+    && make \
+    && make install \
+	&& git clone https://git.zx2c4.com/wireguard-tools \
+    && cd wireguard-tools \
+    && git checkout -b $wg_tools_tag \
+    && cd src \
+    && make \
+    && make install
+
+
+FROM alpine:3.13
+COPY ./bin/. /farcaster/bin/
+COPY --from=builder /usr/bin/wireguard-go /usr/bin/wg* /usr/bin/
 RUN set -eux \
 	&& umask 077 \
-    && echo "deb http://deb.debian.org/debian/ unstable main" | \
-		tee /etc/apt/sources.list.d/unstable-wireguard.list \
-    && printf 'Package: *\nPin: release a=unstable\nPin-Priority: 90\n' | \
-        tee /etc/apt/preferences.d/limit-unstable \
-    && apt-get update \
-    && apt-get install -y \
-        --no-install-recommends --no-install-suggests \
-        wireguard-tools \
-        binutils \
+	&& apk add --no-cache --update \
+		bash libmnl iptables openresolv iproute2 dnsmasq bind-tools \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
-    && ./install-iptables.sh /farcaster \
-    && ./install-dnsmasq.sh /farcaster \
-    && ./install-bash.sh /farcaster \
-    && ./install-dnsutils.sh /farcaster \
     && ln -s /secrets/farcaster/data/wg-tunnel.conf /farcaster/etc/ \
     && ln -s /secrets/farcaster/data/wg-gateway.conf /farcaster/etc/ \
-    && cp -a /usr/bin/wg* /farcaster/bin/ \
-    && (strip /farcaster/bin/* || true)
+    && chmod +x /farcaster/bin/*
 
-FROM gcr.io/distroless/base-debian10:debug
-COPY --from=builder /farcaster/. /farcaster/
-COPY --from=rust_builder /build/boringtun/target/release/boringtun /farcaster/bin/
-COPY --from=rust_builder /lib/x86_64-linux-gnu/libgcc_s.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1
-COPY ./bin/. /farcaster/bin/
-RUN ["/busybox/sh", "-c", "set -eux \
-    && umask 077 \
-    && rm -rf /var/run \
-    && ln -s /run /var \
-    && mkdir -p /secrets/farcaster/data \
-    "]
