@@ -52,7 +52,7 @@ docker_compose="/usr/bin/docker run \
 -v /var/run/docker.sock:/var/run/docker.sock \
 -v $compose_dir:$compose_dir \
 -w=$compose_dir \
-docker/compose:1.26.2"
+docker/compose:1.29.1"
 
 depend() {
     need docker
@@ -82,6 +82,7 @@ start() {
 
     ebegin "Starting ${SVCNAME}"
     cd "$compose_dir" || return 1
+    ${docker_compose} --project-name="${instance_name}" pull
     ${docker_compose} --project-name="${instance_name}" up -d
     eend $?
 }
