@@ -25,7 +25,6 @@ spec:
       - name: gateway
         image: probely/farcaster-onprem-agent:latest
         command:
-        - /busybox/sh
         - /farcaster/bin/start-gateway.sh
         imagePullPolicy: Always
         resources:
@@ -52,7 +51,6 @@ spec:
       - name: tunnel
         image: probely/farcaster-onprem-agent:latest
         command:
-        - /busybox/sh
         - /farcaster/bin/start-tunnel.sh
         imagePullPolicy: Always
         resources:
