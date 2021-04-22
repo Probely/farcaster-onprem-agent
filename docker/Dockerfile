@@ -29,5 +29,8 @@ RUN set -eux \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
     && ln -s /secrets/farcaster/data/wg-tunnel.conf /farcaster/etc/ \
     && ln -s /secrets/farcaster/data/wg-gateway.conf /farcaster/etc/ \
+    && rm -rf /var/run \
+    && ln -s /run /var/run \
+    && mkdir -p /secrets/farcaster/data \
     && chmod +x /farcaster/bin/*
 
