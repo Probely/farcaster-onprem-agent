@@ -135,7 +135,7 @@ supported method.
 
 1. **Running the containers directly**.
 If you have the infrastructure to run Docker containers.
-(Docker, Podman, Kubernetes, OpenShift, among other), you can run the containers
+(e.g. Docker, Podman, Kubernetes, OpenShift), you can run the containers
 directly. This option is not officially supported, but we would love to hear your feedback if
 you are running the agent this way.
 
