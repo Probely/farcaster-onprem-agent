@@ -1,5 +1,5 @@
 CONTAINER=farcaster-onprem-agent
-TAG=latest
+TAG=alpha
 
 .PHONY: all docker push clean ssh_configs
 

@@ -129,3 +129,105 @@ setup_wireguard_iface() {
 	create_dev_tun
 	return $?
 }
+
+start_dnsmasq() {
+    rundir=/run/dnsmasq
+    lport=1053
+    mkdir -p ${rundir}
+    chmod 0711 ${rundir}
+    dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
+    gw_addr="$(get_wg_addr "${WG_GW_IF}")"
+    for proto in tcp udp; do
+        iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
+            --dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
+        iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
+            -d "${gw_addr}" --dport "${lport}" -j ACCEPT
+    done
+}
+
+get_proxy_username() {
+	echo "${HTTP_PROXY:-}" |
+		sed -r 's/^http(s)?\:\/\///' |
+		grep '@' |
+		sed 's/@[^@]*$//' |
+		cut -d ':' -f 1 || echo ""
+}
+
+get_proxy_password() {
+	echo "${HTTP_PROXY:-}" |
+		sed -r 's/^http(s)?\:\/\///' |
+		grep '@' |
+		sed 's/@[^@]*$//' |
+		cut -d ':' -f 2 || echo ""
+}
+
+get_proxy_address() {
+	echo "${HTTP_PROXY:-}" |
+		sed -r 's/^http(s)?\:\/\///' |
+        sed -r 's/\/.*//' |
+		sed 's/^.*@//'
+}
+
+
+get_proxy_host() {
+	echo "$1" |
+		sed -r 's/^http(s)?\:\/\///' |
+        cut -d ':' -f 1
+}
+
+get_proxy_port() {
+    port=$(echo "$1" | grep ':' | cut -d ':' -f 2)
+    if [ "${port}" = "" ]; then
+        port="8080"
+    fi
+    echo "${port}"
+}
+
+
+create_moproxy_config() {
+    config_path="$1"
+    user=$(get_proxy_username)
+    password=$(get_proxy_password)
+    address=$(get_proxy_address)
+    host=$(get_proxy_host "${address}")
+    ipaddr=$(dig +short "${host}" || echo "")
+    ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
+    port=$(get_proxy_port "${address}")
+    auth=$(test ! -z "${user}" && printf "http username = ${user}\nhttp password = ${password}\n" || echo "")
+
+    umask 033
+    cat << EOF > ${config_path}
+[default]
+address=${ipaddr}:${port}
+protocol=http
+test dns=127.0.0.1:53
+listen ports=1080
+${auth}
+EOF
+}
+
+set_proxy_redirect_rules() {
+    proxy_port="$1"
+    gw_addr="$(get_wg_addr "${WG_GW_IF}")"
+    iptables -t nat -N PROXY-REDIRECT
+    for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+        iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
+    done
+    iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+    iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+    iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
+}
+
+start_moproxy_maybe() {
+    proxy_port=1080
+    test -z ${HTTP_PROXY:-} && return 0
+    rundir=/run/moproxy
+    mkdir -p ${rundir}
+    chmod 0711 ${rundir}
+    config_path="${rundir}/config.ini"
+    create_moproxy_config ${config_path}
+    set_proxy_redirect_rules ${proxy_port}
+    /bin/su -s /bin/sh -l proxy -c "exec /usr/bin/moproxy --port ${proxy_port} --list ${config_path}" &
+    return 0
+}
+

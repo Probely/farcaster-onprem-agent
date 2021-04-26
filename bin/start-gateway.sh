@@ -37,19 +37,10 @@ iptables -t nat -F POSTROUTING
 iptables -t nat -A POSTROUTING -j FARCASTER-NAT
 
 # Redirect any DNS request to a local dnsmasq and let it handle the details
-rundir=/run/dnsmasq
-lport=1053
-mkdir -p ${rundir}
-chown -R root:root ${rundir}
-chmod 0711 ${rundir}
-dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
-gw_addr="$(get_wg_addr "${WG_GW_IF}")"
-for proto in tcp udp; do
-	iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
-		--dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
-	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
-		-d "${gw_addr}" --dport "${lport}" -j ACCEPT
-done
+start_dnsmasq
+
+# If an HTTP proxy is defined, use it for all TCP connections
+start_moproxy_maybe
 
 rc=1
 if start_wireguard "${WG_GW_IF}"; then

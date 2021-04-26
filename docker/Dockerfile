@@ -1,8 +1,14 @@
-FROM golang:1.16-alpine as builder
+FROM rust:alpine as rust_builder
+RUN set -eux \
+    && apk add --no-cache git build-base \
+    && git clone https://github.com/sorz/moproxy \
+    && cd moproxy \
+    && cargo build --release
 
+
+FROM golang:1.16-alpine as go_builder
 ARG wg_go_tag=0.0.20210323
 ARG wg_tools_tag=v1.0.20210315
-
 ENV WITH_WGQUICK=yes
 RUN set -eux \
     && apk add --update git build-base libmnl-dev iptables \
@@ -21,7 +27,8 @@ RUN set -eux \
 
 FROM alpine:3.13
 COPY ./bin/. /farcaster/bin/
-COPY --from=builder /usr/bin/wireguard-go /usr/bin/wg* /usr/bin/
+COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/wg* /usr/bin/
+COPY --from=rust_builder /moproxy/target/release/moproxy /usr/bin
 RUN set -eux \
     && umask 077 \
     && apk add --no-cache --update \
@@ -32,5 +39,6 @@ RUN set -eux \
     && rm -rf /var/run \
     && ln -s /run /var/run \
     && mkdir -p /secrets/farcaster/data \
-    && chmod +x /farcaster/bin/*
+    && chmod +x /farcaster/bin/* \
+    && addgroup -S proxy && adduser -S proxy -G proxy
 
