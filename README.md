@@ -104,7 +104,7 @@ means: *all ports from 1024 to 2048, inclusive*.
 | DNS            | `agent-ip` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | DHCP           | `agent-ip` | `any`                                | `UDP`        | `67:68`              | `67:68`                |
 | Scan           | `agent-ip` | `<scan-target>`<sup>1</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>2</sup>    |
-| Docker         | `agent-ip` | `registry.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`                  |
+| Docker         | `agent-ip` | `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`                  |
 | Update servers | `agent-ip` | `dl-cdn.alpinelinux.org`<sup>3</sup> | `TCP`        | `1024:65535`         | `80`, `443`              |
 
 Notes:
@@ -114,11 +114,13 @@ If your target is configured to use internal extra-hosts, you must include their
 The same goes if the target login URL is served from a different internal web application.
 2. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
-3. The IP addresses of these hosts are subject to change. We recommend allowing 
+3. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`.
+The IP addresses of these hosts are subject to change. We recommend allowing 
 web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent VM
 can use an HTTP proxy server to reach the web. The proxy can be set in the `/etc/environment`
-file. **Please note that the proxy is used for web access only. The agent still needs access
-to hub.farcaster.probely.com on UDP port 443, even if the proxy is enabled.**
+file on the agent VM. **Please note that the proxy is used for web access only.
+The agent itself still needs access to hub.farcaster.probely.com on UDP port 443,
+even if a proxy is defined.**
 
 
 # Installation
