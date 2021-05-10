@@ -317,6 +317,8 @@ from the Agent installer. Note that you will be prompted for a password
 
 ## Option 3: Building from source
 
+Note: this option is not officially supported, and may require setting additional options to work on some environments.
+
 * Start by checking the code out from the repository:
 
   ```bash
