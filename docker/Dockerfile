@@ -1,25 +1,27 @@
 FROM rust:alpine as rust_builder
+ENV moproxy_tag=v0.3.9
 RUN set -eux \
     && apk add --no-cache git build-base \
     && git clone https://github.com/sorz/moproxy \
     && cd moproxy \
+    && git checkout -b tags/$moproxy_tag \
     && cargo build --release
 
 
 FROM golang:1.16-alpine as go_builder
-ARG wg_go_tag=0.0.20210323
-ARG wg_tools_tag=v1.0.20210315
+ARG wg_go_branch=0.0.20210323
+ARG wg_tools_branch=v1.0.20210315
 ENV WITH_WGQUICK=yes
 RUN set -eux \
     && apk add --update git build-base libmnl-dev iptables \
     && git clone https://git.zx2c4.com/wireguard-go \
     && cd wireguard-go \
-    && git checkout -b $wg_go_tag \
+    && git checkout -b $wg_go_branch \
     && make \
     && make install \
     && git clone https://git.zx2c4.com/wireguard-tools \
     && cd wireguard-tools \
-    && git checkout -b $wg_tools_tag \
+    && git checkout -b $wg_tools_branch \
     && cd src \
     && make \
     && make install
