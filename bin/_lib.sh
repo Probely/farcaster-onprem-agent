@@ -228,6 +228,8 @@ start_moproxy_maybe() {
     create_moproxy_config ${config_path}
     set_proxy_redirect_rules ${proxy_port}
     /bin/su -s /bin/sh -l proxy -c "exec /usr/bin/moproxy --port ${proxy_port} --list ${config_path}" &
-    return 0
+    sleep 5
+    kill -0 $!
+    return $?
 }
 

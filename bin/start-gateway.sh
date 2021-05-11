@@ -40,7 +40,8 @@ iptables -t nat -A POSTROUTING -j FARCASTER-NAT
 start_dnsmasq
 
 # If an HTTP proxy is defined, use it for all TCP connections
-start_moproxy_maybe
+start_moproxy_maybe || \
+    { echo "HTTP_PROXY variable defined, but could not redirect traffic. Make sure that this variable is correct."; exit 1; }
 
 rc=1
 if start_wireguard "${WG_GW_IF}"; then
