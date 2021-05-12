@@ -222,7 +222,7 @@ Machine. Note that you will be prompted for a password
   After starting the Agent, it should link-up with Probely. Run the following command:
 
   ```bash
-  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
+  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "latest handshake"
   ```
 
   You should see a `latest handshake: N seconds/minutes ago` message.
@@ -232,7 +232,7 @@ Machine. Note that you will be prompted for a password
   If not, check if Wireguard is connecting to the agent Hub:
   
   ```bash
-  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "transfer"
+  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
   ````
   
   If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
@@ -296,7 +296,7 @@ from the Agent installer. Note that you will be prompted for a password
   After starting the Agent, it should link-up with Probely. Run the following command:
 
   ```bash
-  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "latest handshake"
+  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "latest handshake"
   ```
 
   You should see a `latest handshake: N seconds/minutes ago` message.
@@ -306,7 +306,7 @@ from the Agent installer. Note that you will be prompted for a password
   If not, check if Wireguard is connecting to the agent Hub:
   
   ```bash
-  sudo docker exec -ti tunnel /farcaster/bin/wg show wg-tunnel | grep "transfer"
+  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
   ````
   
   If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
