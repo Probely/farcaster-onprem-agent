@@ -104,7 +104,7 @@ means: *all ports from 1024 to 2048, inclusive*.
 | DNS            | `agent-ip` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | DHCP           | `agent-ip` | `any`                                | `UDP`        | `67:68`              | `67:68`                |
 | Scan           | `agent-ip` | `<scan-target>`<sup>1</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>2</sup>    |
-| Docker         | `agent-ip` | `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`                  |
+| Docker         | `agent-ip` | `auth.docker.io`, `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`                  |
 | Update servers | `agent-ip` | `dl-cdn.alpinelinux.org`<sup>3</sup> | `TCP`        | `1024:65535`         | `80`, `443`              |
 
 Notes:
