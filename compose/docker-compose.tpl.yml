@@ -20,6 +20,7 @@ services:
     - NET_RAW
     - SETUID
     - SETGID
+    - KILL
     restart: always
 
   tunnel:
