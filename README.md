@@ -59,7 +59,7 @@ surface. Instead, it creates an outbound connection to Probely’s network.
 
 * We are firm believers that simplicity enables security.
 The Agent follows simple design decisions, and uses modern open-source standard
-components, such as [Wireguard](https://www.wireguard.com/).
+components, such as [WireGuard](https://www.wireguard.com/).
 * The Agent has minimal network requirements. Typical network requirements,
 such as public IP addresses, complex firewall rules are unnecessary or minimized.
 * The Agent needs minimal hardware resources and is designed to scale easily.
@@ -186,18 +186,16 @@ The VM archive name is `probely-onprem-agent-vm-<version>.zip`
   Enabling SSH public-key authentication is outside the scope of this document,
   but we can assist you in doing so through the support channels.
 
-* You should have been given a `probely-onprem-agent-<id>.run` file, which is an
+* You should have a `probely-onprem-agent-<id>.run` file, which is an
 installer script tailored to your specific Agent.
 
-  The installer is password-protected.
-  If you do not have the installer script, or its password, please contact
-  Probely's support team.
+  If you do not have an installer, you can create one in the
+  [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
   If you want to know how the installer is built and what it does, please refer
   to the [Installer](#installer) section.
 
 * To configure the Agent, run the following commands on the Agent Virtual
-Machine. Note that you will be prompted for a password
-(`enter aes-256-cbc decryption password`):
+Machine:
 
   ```bash
   chmod +x ./probely-onprem-agent-<id>.run
@@ -229,7 +227,7 @@ Machine. Note that you will be prompted for a password
 
   If so, **you can start scanning on-premises targets using Probely**
 
-  If not, check if Wireguard is connecting to the agent Hub:
+  If not, check if WireGuard is connecting to the agent Hub:
   
   ```bash
   sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
@@ -247,14 +245,15 @@ Note: this option is not officially supported, and may require setting additiona
 options to work on some environments.
 
 For optimal performance, you should run the the container on a host with kernel support
-for [Wireguard](https://www.wireguard.com/install/).
-If Wireguard support is not detected, the Agent will use
+for [WireGuard](https://www.wireguard.com/install/).
+If WireGuard support is not detected, the Agent will use
 [boringtun](https://github.com/cloudflare/boringtun) as a fallback option.
 
-You should have been given a `probely-onprem-agent-<id>.run` file, which is an
-installer script tailored to your specific Agent. The installer is password-protected.
-If you do not have the installer script, or its password, please contact
-Probely's support team.
+You should have a `probely-onprem-agent-<id>.run` file, which is an
+installer script tailored to your specific Agent.
+
+If you do not have an installer, you can create one in the
+[Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
 If you want to know how the installer is built and what it does, please refer
 to the [Installer](#installer) section.
 
@@ -275,8 +274,7 @@ for these instructions to work. Please follow this procedure on a VM with those
 requirements met.
 
 * Run the following commands to extract the Agent keys and configuration files
-from the Agent installer. Note that you will be prompted for a password
-(`enter aes-256-cbc decryption password`):
+from the Agent installer:
 
   ```bash
   chmod +x ./probely-onprem-agent-<id>.run
@@ -303,7 +301,7 @@ from the Agent installer. Note that you will be prompted for a password
 
   If so, **you can start scanning on-premises targets using Probely.**
 
-  If not, check if Wireguard is connecting to the agent Hub:
+  If not, check if WireGuard is connecting to the agent Hub:
   
   ```bash
   sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
@@ -349,14 +347,13 @@ The installer build script expects a "config bundle" to exist. A config bundle
 is a set of configuration files and keys that allow the Agent to connect to
 Probely.
 
-You should have been given a `probely-onprem-agent-<id>.run` file, which is an
-installer script tailored to your specific Agent. The installer is password-protected.
-If you do not have the installer script, or its password, please contact
-Probely's support team.
+You should have a `probely-onprem-agent-<id>.run` file, which is an
+installer script tailored to your specific Agent.
 
-* First, extract the Agent configuration bundle from the original installer.
-Note that you will be prompted for a password (`enter aes-256-cbc decryption password`):
+If you do not have an installer, you can create one in the
+[Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
 
+* First, extract the Agent configuration bundle from the original installer:
   ```bash
   chmod +x ./probely-onprem-agent-<id>.run
   ./probely-onprem-agent-<id>.run --noexec --target ./tmp/agent-installer
