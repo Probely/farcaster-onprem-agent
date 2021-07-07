@@ -42,6 +42,7 @@ spec:
             - NET_RAW
             - SETUID
             - SETGID
+            - KILL
         volumeMounts:
         - name: gateway-run
           mountPath: /run
