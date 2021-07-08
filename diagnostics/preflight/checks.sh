@@ -83,3 +83,16 @@ if [ ${ret} -ne 0 ]; then
     echo "      * https://docs.docker.com/config/daemon/systemd/#httphttps-proxy"
     echo
 fi
+
+echo
+echo "Preflight checks passed. You should be able to launch the Agent containers."
+echo
+echo "After the containers are started, you may run additional diagnostics:"
+echo
+echo "* Check basic connectivity"
+echo "  docker exec -ti gateway farcaster-diagnostics --check-connectivity"
+echo
+echo "* Check if a specific target is reachable"
+echo "  docker exec -ti gateway farcaster-diagnostics --check-http <target_url>"
+echo "  example: docker exec -ti gateway farcaster-diagnostics --check-http https://10.0.0.1:8080"
+echo

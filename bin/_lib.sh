@@ -233,3 +233,18 @@ start_moproxy_maybe() {
     return $?
 }
 
+function print_log() {
+    cat ${1}
+    echo
+    echo "===================================================================="
+    echo
+    echo
+    echo "Could not start the agent. Please contact support@probely.com and"
+    echo "attach this log to your message. "
+    echo
+    echo
+    echo "===================================================================="
+    echo
+    sleep 120 
+}
+
