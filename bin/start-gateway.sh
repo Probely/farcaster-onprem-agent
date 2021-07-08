@@ -44,24 +44,29 @@ function setup_firewall_and_nat() {
 exec 2>>${LOG_FILE}
 set -x
 
-echo "Setting up firewall and NAT rules..."
+echo -ne "Setting up firewall and NAT rules\t... "
 if ! setup_firewall_and_nat; then
-    echo "ERROR: could not set up firewall and NAT rules"
+    echo "error"
+    echo "Could not set up firewall and NAT rules"
     print_log ${LOG_FILE}
     exit 1
 fi
+echo "done"
 
 # Redirect any DNS request to a local dnsmasq and let it handle the details
-echo "Starting local DNS resolver..."
+echo -ne "Starting local DNS resolver\t... "
 if ! start_dnsmasq; then
-    echo "ERROR: could not start local DNS resolver"
+    echo "error"
+    echo "Could not start local DNS resolver"
     print_log ${LOG_FILE}
     exit 1
 fi
+echo "done"
 
 # If an HTTP proxy is defined, use it for all TCP connections
-echo "Checking whether traffic should be redirected through a proxy..."
+echo -ne "Checking if a proxy is required\t... "
 if ! start_moproxy_maybe; then
+    echo "error"
     echo -n "HTTP_PROXY variable defined, but could not redirect traffic. "
     echo "Make sure this variable is properly set."
     echo
@@ -69,17 +74,22 @@ if ! start_moproxy_maybe; then
     print_log ${LOG_FILE}
     exit 1
 fi
+echo "done"
 
-echo "Starting WireGuard daemon..."
+echo -ne "Starting WireGuard connections\t... "
 if ! start_wireguard "${WG_GW_IF}"; then
-    echo "ERROR: could not start WireGuard service"
+    echo "error"
+    echo "Could not start WireGuard service"
     print_log ${LOG_FILE}
     exit 1
 fi
+echo "done"
 
-set +x
 check_hub=0
-echo "Watching over WireGuard connection..."
+echo
+echo "Running..."
 rc=$(watch_wireguard "${WG_GW_IF}" ${check_hub})
-sleep 10
+if [ ${rc} -ne 0 ]; then
+    print_log ${LOG_FILE}
+fi
 exit ${rc}

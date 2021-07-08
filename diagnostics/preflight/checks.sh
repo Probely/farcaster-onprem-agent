@@ -89,6 +89,9 @@ echo "Preflight checks passed. You should be able to launch the Agent containers
 echo
 echo "After the containers are started, you may run additional diagnostics:"
 echo
+echo "* Check gateway logs"
+echo "  docker logs -f gateway"
+echo
 echo "* Check basic connectivity"
 echo "  docker exec -ti gateway farcaster-diagnostics --check-connectivity"
 echo
