@@ -92,4 +92,5 @@ rc=$(watch_wireguard "${WG_GW_IF}" ${check_hub})
 if [ ${rc} -ne 0 ]; then
     print_log ${LOG_FILE}
 fi
+sleep 5
 exit ${rc}
