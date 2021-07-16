@@ -65,7 +65,7 @@ ret=$?
 print_status ${ret}
 if [ ${ret} -ne 0 ]; then
     echo
-    echo "Could not run the test Docker container!"
+    echo "Could not run a test Docker container!"
     echo
     echo "Please ensure that:"
     echo "  1. This user has the required permissions to run containers"
