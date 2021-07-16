@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 
 set -uo pipefail
 
@@ -65,7 +65,7 @@ ret=$?
 print_status ${ret}
 if [ ${ret} -ne 0 ]; then
     echo
-    echo "Could not run the test Docker container!"
+    echo "Could not run a test Docker container!"
     echo
     echo "Please ensure that:"
     echo "  1. This user has the required permissions to run containers"
@@ -85,7 +85,7 @@ if [ ${ret} -ne 0 ]; then
 fi
 
 echo
-echo "Preflight checks passed. You should be able to launch the Agent containers."
+echo "Preflight check passed. You should be able to launch the Agent containers."
 echo
 echo "After the containers are started, you may run additional diagnostics:"
 echo
@@ -93,9 +93,9 @@ echo "* Check gateway logs"
 echo "  docker logs -f gateway"
 echo
 echo "* Check basic connectivity"
-echo "  docker exec -ti gateway farcaster-diagnostics --check-connectivity"
+echo "  docker exec -ti gateway diag check-network"
 echo
 echo "* Check if a specific target is reachable"
-echo "  docker exec -ti gateway farcaster-diagnostics --check-http <target_url>"
-echo "  example: docker exec -ti gateway farcaster-diagnostics --check-http https://10.0.0.1:8080"
+echo "  docker exec -ti gateway diag check-http <url>"
+echo "  example: docker exec -ti gateway diag check-http https://10.0.0.1:8443"
 echo
