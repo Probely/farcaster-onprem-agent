@@ -10,12 +10,12 @@ var client = &http.Client{
 	Timeout: time.Second * 20,
 }
 
-type Result struct {
+type HTTPResult struct {
 	StatusCode int
 	Data       []byte
 }
 
-func HTTPEndpoint(url string) (*Result, error) {
+func HTTPEndpoint(url string) (*HTTPResult, error) {
 	var err error
 	if _, err = http.NewRequest("GET", url, nil); err != nil {
 		return nil, err
@@ -27,7 +27,7 @@ func HTTPEndpoint(url string) (*Result, error) {
 	}
 	defer resp.Body.Close()
 
-	res := &Result{StatusCode: resp.StatusCode}
+	res := &HTTPResult{StatusCode: resp.StatusCode}
 	res.Data, err = httputil.DumpResponse(resp, true)
 
 	return res, err
