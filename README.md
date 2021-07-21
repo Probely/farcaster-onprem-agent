@@ -364,9 +364,6 @@ If you do not have an installer, you can create one in the
   tar -zcpvf ./tmp/<id>.tar.gz -C ./tmp/agent-installer/secrets .
   ```
 
-The installer build script will ask you for a password to secure the secrets. 
-Please choose a strong password.
-
 * Create the new installer:
 
   ```bash
