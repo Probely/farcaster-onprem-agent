@@ -33,7 +33,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	var err error
 	errCnt := 0
 
-	fmt.Printf(format.PadFmtStr, "Checking if WireGuard tunnel is up")
+	format.PrintPadf("\nChecking if WireGuard tunnel is up")
 	err = check.WireguardTunnel(wireguardDeviceName)
 	if err != nil {
 		errCnt++
@@ -41,13 +41,12 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	format.PrintErr(err)
 	if err != nil {
 		fmt.Println(`  * WireGuard tunnel appears to be down.
-    Plase ensure that the agent can connect to hub.farcaster.probely.com on UDP port 443`)
+    Please ensure that the agent can connect to hub.farcaster.probely.com on UDP port 443`)
 	}
 
 	for _, url := range farcasterHTTPEndpoints {
-		s := fmt.Sprintf("Checking if %s is reachable", url)
-		fmt.Printf(format.PadFmtStr, s)
-		err = check.HTTPEndpoint(url)
+		format.PrintPadf("\nChecking if %s is reachable", url)
+		_, err = check.HTTPEndpoint(url)
 		if err != nil {
 			errCnt++
 		}
@@ -56,9 +55,8 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 
 	prevErrCnt := errCnt
 	for _, url := range externalHTPEndpoints {
-		s := fmt.Sprintf("Checking if %s is reachable", url)
-		fmt.Printf(format.PadFmtStr, s)
-		err = check.HTTPEndpoint(url)
+		format.PrintPadf("\nChecking if %s is reachable", url)
+		_, err = check.HTTPEndpoint(url)
 		if err != nil {
 			errCnt++
 		}
@@ -66,8 +64,9 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	}
 	if errCnt > prevErrCnt {
 		fmt.Println(`  * External websites appear to be blocked.
-    If your try to scan an internal website which includes external resources,
-    the assessment might fail as the agent will not be able to load those resources`)
+    If scanning internal websites which include external resources, the scan may fail.
+  * If an HTTP proxy is needed for external websites, please set the HTTP_PROXY
+    variable on docker-compose.yml, and then restart the agent.`)
 	}
 
 	os.Exit(errCnt)

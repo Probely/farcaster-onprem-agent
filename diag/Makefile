@@ -10,6 +10,6 @@ vet: fmt
 	go vet ./...
 
 build: vet
-	go build main.go
+	go build -o diag main.go
 
 .PHONY: fmt lint vet build
