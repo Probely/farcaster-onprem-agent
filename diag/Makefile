@@ -1,4 +1,5 @@
 .DEFAULT_GOAL := build
+BIN := diag
 
 fmt:
 	go fmt ./...
@@ -10,6 +11,9 @@ vet: fmt
 	go vet ./...
 
 build: vet
-	go build -o diag main.go
+	go build -o $(BIN) main.go
 
-.PHONY: fmt lint vet build
+clean:
+	rm -rf $(BIN)
+
+.PHONY: fmt lint vet build clean

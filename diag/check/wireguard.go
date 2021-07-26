@@ -24,12 +24,12 @@ func WireguardTunnel(name string) error {
 	}
 
 	if len(dev.Peers) == 0 {
-		return errors.New("WireGuard tunnel has no peers")
+		return errors.New("device has no peers")
 	}
 
 	handshakeExpiryTime := dev.Peers[0].LastHandshakeTime.Add(handshakeTTL)
 	if time.Now().After(handshakeExpiryTime) {
-		return errors.New("WireGuard handshake is expired")
+		return errors.New("connection handshake not established or expired")
 	}
 
 	return nil

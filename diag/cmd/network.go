@@ -15,7 +15,7 @@ const (
 
 var (
 	farcasterHTTPEndpoints = [...]string{"https://api.probely.com"}
-	externalHTPEndpoints   = [...]string{"https://google.comx"}
+	externalHTPEndpoints   = [...]string{"https://google.com"}
 )
 
 func init() {

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -214,7 +214,10 @@ set_proxy_redirect_rules() {
         iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
     done
     iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+    # Remote traffic arriving in the tunnel
     iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+    # Local traffic from the "diag" group. Used for debugging purposes
+    iptables -t nat -I OUTPUT -m owner --gid-owner diag -j PROXY-REDIRECT
     iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
 }
 

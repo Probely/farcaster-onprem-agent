@@ -1,6 +1,8 @@
 package check
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"time"
@@ -29,6 +31,9 @@ func HTTPEndpoint(url string) (*HTTPResult, error) {
 
 	res := &HTTPResult{StatusCode: resp.StatusCode}
 	res.Data, err = httputil.DumpResponse(resp, true)
-
+	if err == nil && (res.StatusCode < 200 || res.StatusCode >= 400) {
+		msg := fmt.Sprint("Unexpected HTTP status code: ", res.StatusCode)
+		err = errors.New(msg)
+	}
 	return res, err
 }

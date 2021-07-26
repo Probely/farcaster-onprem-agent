@@ -1,4 +1,4 @@
-module github.com/probely/farcaster-onprem-agent
+module github.com/probely/farcaster-onprem-agent/diag
 
 go 1.16
 
