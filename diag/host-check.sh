@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 set -uo pipefail
 
@@ -85,7 +85,7 @@ if [ ${ret} -ne 0 ]; then
 fi
 
 echo
-echo "Preflight check passed. You should be able to launch the Agent containers."
+echo "Host checks passed. You should be able to launch the Agent containers."
 echo
 echo "After the containers are started, you may run additional diagnostics:"
 echo
