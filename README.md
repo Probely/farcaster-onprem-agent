@@ -155,12 +155,14 @@ To create the Agent Virtual Machine, please follow these steps:
 
 * Download the most recent Virtual Machine disk image from the
 [Releases](https://github.com/Probely/farcaster-onprem-agent/releases) page.
-The VM archive name is `probely-onprem-agent-<version>.{qcow2,vmdk}`
+The VM archive name is `probely-onprem-agent-<version>.{qcow2,vmdk.zip}`
 
 * Create a new VM and allocate the required system resources, as defined in the
 [System Resources](#system-resources) section
 
 * Add the VM disk image (qcow2 or vmdk)
+
+* Start the VM
 
 * After the VM boots, use the default Agent credentials to log in
 (user: `probely`, password: `changeme`)
