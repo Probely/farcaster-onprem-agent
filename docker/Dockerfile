@@ -34,7 +34,7 @@ RUN set -eux \
     && cd -
 
 
-FROM alpine:3.13
+FROM alpine:3.14
 COPY ./bin/. /farcaster/bin/
 COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/wg* /usr/bin/
 COPY --from=go_builder /build/diag/diag /usr/local/bin/

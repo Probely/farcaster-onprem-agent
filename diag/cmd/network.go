@@ -33,7 +33,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	var err error
 	errCnt := 0
 
-	format.PrintPadf("\nChecking if WireGuard tunnel is up")
+	format.PrintPadf("Checking if WireGuard tunnel is up")
 	err = check.WireguardTunnel(wireguardDeviceName)
 	if err != nil {
 		errCnt++
@@ -45,7 +45,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	}
 
 	for _, url := range farcasterHTTPEndpoints {
-		format.PrintPadf("\nChecking if %s is reachable", url)
+		format.PrintPadf("Checking if %s is reachable", url)
 		_, err = check.HTTPEndpoint(url)
 		if err != nil {
 			errCnt++
@@ -55,7 +55,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 
 	prevErrCnt := errCnt
 	for _, url := range externalHTPEndpoints {
-		format.PrintPadf("\nChecking if %s is reachable", url)
+		format.PrintPadf("Checking if %s is reachable", url)
 		_, err = check.HTTPEndpoint(url)
 		if err != nil {
 			errCnt++
