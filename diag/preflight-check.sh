@@ -97,5 +97,5 @@ echo "  docker exec -ti gateway diag check-network"
 echo
 echo "* Check if a specific target is reachable"
 echo "  docker exec -ti gateway diag check-http <url>"
-echo "  example: docker exec -ti gateway diag check-http https://10.0.0.1:8080"
+echo "  example: docker exec -ti gateway diag check-http https://10.0.0.1:8443"
 echo

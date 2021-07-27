@@ -29,7 +29,7 @@ func WireguardTunnel(name string) error {
 
 	handshakeExpiryTime := dev.Peers[0].LastHandshakeTime.Add(handshakeTTL)
 	if time.Now().After(handshakeExpiryTime) {
-		return errors.New("connection handshake not established or expired")
+		return errors.New("connection handshake not yet established or expired")
 	}
 
 	return nil
