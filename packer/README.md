@@ -1,4 +1,4 @@
-# Remote Agent Packer Templates
+# On-premises Agent Packer Templates
 
 The "On-premises Agent" is a component of the Probely Farcaster infrastructure.
 It allows Probely's cloud-based scanners to find vulnerabilities on customer on-premises applications.
