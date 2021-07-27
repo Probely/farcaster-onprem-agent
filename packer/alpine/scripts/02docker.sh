@@ -49,7 +49,7 @@ docker_compose="/usr/bin/docker run \
 -v /var/run/docker.sock:/var/run/docker.sock \
 -v $compose_dir:$compose_dir \
 -w=$compose_dir \
-docker/compose:alpine-1.29.2"
+docker/compose:1.29.2"
 
 depend() {
     need docker

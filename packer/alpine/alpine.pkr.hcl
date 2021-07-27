@@ -55,8 +55,8 @@ locals {
   scripts = [
     "scripts/00base.sh",
     "scripts/02sshd.sh",
+    "scripts/02docker.sh",
     "scripts/03users.sh",
-    "scripts/05docker.sh",
     "scripts/90virt.sh",
     "scripts/91harden.sh",
     "scripts/97farcaster.sh",

@@ -46,3 +46,20 @@ EOF
 
 chmod +x /etc/init.d/farcaster-setup
 rc-update add farcaster-setup default
+
+# Helper that checks if the host can launch farcaster containers
+curl -L https://raw.githubusercontent.com/probely/farcaster-onprem-agent/master/diag/host-check.sh > /usr/local/bin/host-check
+chmod +x /usr/local/bin/host-check
+
+# Shortcut for farcaster container internal sanity check tool
+cat << 'EOF' > /usr/local/bin/diag
+#!/bin/sh
+if !(docker exec -ti gateway ls >/dev/null 2>&1); then
+	echo "Error - the farcaster gateway container does not seem to be running:"
+	echo "  * Please run 'host-check' to check if host requirements are met"
+	echo "  * Make sure that the farcaster containers are installed"
+	exit 1
+fi
+exec docker exec -ti gateway $@
+EOF
+chmod +x /usr/local/bin/diag
