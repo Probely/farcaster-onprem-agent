@@ -9,7 +9,7 @@ iface eth0 inet dhcp
 "
 TIMEZONEOPTS="-z UTC"
 PROXYOPTS="none"
-APKREPOSOPTS="http://dl-cdn.alpinelinux.org/alpine/v3.12/main"
+APKREPOSOPTS="http://dl-cdn.alpinelinux.org/alpine/v3.14/main"
 SSHDOPTS="-c openssh"
 NTPOPTS="-c chrony"
 DISKOPTS="-s 0 -m sys __DISK_DEVICE__"

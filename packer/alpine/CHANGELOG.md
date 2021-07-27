@@ -1,12 +1,16 @@
-## [Alpine Linux](http://alpinelinux.org) v3.12
+## [Alpine Linux](http://alpinelinux.org) v3.14
 
 * x86_64
 * Virtualized install
-* Support for KVM, and VirtualBox. VMWare and Xen coming soon.
+* Supports QEMU, VirtualBox, and VMWare sources
 * Includes VBoxGuestAdditions or open-vm-tools, depending on hypervisor type
-* [Packer template](https://github.com/Probely/packer-templates/farcaster-alpine3.10)
+* [Packer template](https://github.com/Probely/farcaster-onprem-agent/packer)
 
 ## Changes
+* 3.14.0
+  * Upgrade to Alpine v3.14.0
+  * Update build process
+
 * 3.12.1
   * Upgrade to Alpine v3.12.1
 

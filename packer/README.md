@@ -10,7 +10,7 @@ We use [Packer](https://packer.io) to build a virtual appliance. We support seve
 To build an Agent appliance using VirtualBox, run the following commands:
 
 ```bash
-cd alpine-3.12
+cd alpine-3.14
 ../build.sh virtualbox
 ```
 
