@@ -11,7 +11,7 @@ After being installed on-premises, the Agent creates an encrypted and
 authenticated tunnel, in which traffic flows securely between Probely and your
 network.
 
-The Agent is open-source, and the code is freely available
+The Agent is open-source, and all source code is freely available
 [here](https://github.com/probely/farcaster-onprem-agent).
 
 The following diagram shows an example network topology depicting an on-premises
@@ -66,8 +66,8 @@ such as public IP addresses, complex firewall rules are unnecessary or minimized
 
 # System Resources
 
-The Agent is comprised of a set of Docker containers, which require relatively
-little system resources.
+The Agent is comprised of a set of Docker containers, requiring relatively
+few system resources.
 
 The following table contains the recommended minimum system resources.
 
@@ -145,23 +145,22 @@ Building from source allows controlling every aspect of the Farcaster Agent.
 
 ## Option 1: Virtual Machine (recommended)
 
-The Agent VM is packaged as a ZIP archive, containing an Open Virtual Format
-(OVF) file, and a Virtual Machine Disk (VMDK).
+The Agent VM is available as a qcow2 or vmdk disk image.
 
-You should be able to import the Agent VM on any modern virtualization solution.
-If are having issues importing the VM, we are happy to provide you with a
-custom Agent VM for your specific needs.
+You should be able to import the disk image on any modern virtualization solution.
+If are having issues launching the VM, or require a specific VM disk format, please contact us
+through our support channels.
 
-To install the Agent Virtual Machine, please follow these steps:
+To create the Agent Virtual Machine, please follow these steps:
 
-* Download the most recent Virtual Machine from the
+* Download the most recent Virtual Machine disk image from the
 [Releases](https://github.com/Probely/farcaster-onprem-agent/releases) page.
-The VM archive name is `probely-onprem-agent-vm-<version>.zip`
+The VM archive name is `probely-onprem-agent-<version>.{qcow2,vmdk}`
 
-* Import the OVF file into your virtualization solution
-
-* Allocate the required system resources for the Agent VM, as defined in the
+* Create a new VM and allocate the required system resources, as defined in the
 [System Resources](#system-resources) section
+
+* Add the VM disk image (qcow2 or vmdk)
 
 * After the VM boots, use the default Agent credentials to log in
 (user: `probely`, password: `changeme`)
@@ -241,7 +240,7 @@ Machine:
 ## Option 2: Docker containers
 
 Note: this option is not officially supported, and may require setting additional
-options to work on some environments.
+options on your platform to work properly.
 
 For optimal performance, you should run the the container on a host with kernel support
 for [WireGuard](https://www.wireguard.com/install/).
@@ -386,28 +385,21 @@ We use [Packer](https://packer.io) to build the Agent VM.
 
 Currently, we support the following builder types:
 
-* VirtualBox
+* QEMU (KVM, Xen)
 * VMWare
-* XEN
-* KVM
 
 If you need to build the Agent VM image on a virtualization platform different
 from the ones we currently support, please contact Probely's support.
-
-For example, to build the Agent VM using the VirtualBox builder, follow these steps:
 
 * Install [Packer](https://www.packer.io/intro/getting-started/install.html)
 * Run these commands:
 
   ```bash
-  cd vm/packer-templates/alpine3.12
-  ../build.sh virtualbox
+  cd packer
+  make
   ```
 
-After Packer finishes building the VM, you should have OVF and VMDK files
-available on the `output-virtualbox-iso` directory. Note that the output
-directory name and contents may differ, depending on the underlying VM builder
-you chose to create the VM.
+The VM disk images will be available in the `build/` directory.
 
 You can now install the VM using the steps described in the Virtual Machine
 installation section. If applicable, remember to use your custom

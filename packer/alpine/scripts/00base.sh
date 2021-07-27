@@ -1,12 +1,12 @@
 set -ux
 
 # Add community repo
-echo http://dl-cdn.alpinelinux.org/alpine/v3.12/community >> /etc/apk/repositories
+echo http://dl-cdn.alpinelinux.org/alpine/v3.14/community >> /etc/apk/repositories
 
 apk upgrade -U --available
 
-# Base packages
-apk add apk-cron curl dmidecode patch
+# Packages
+apk add apk-cron curl dmidecode patch iptables
 
 source /etc/os-release
 

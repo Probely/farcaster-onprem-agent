@@ -6,9 +6,9 @@ rc-update add docker default
 cat << 'EOF' | (cd /etc/init.d && patch -p0)
 --- docker.orig
 +++ docker
-@@ -18,11 +18,18 @@
- 
- retry="${DOCKER_RETRY:-TERM/60/KILL/10}"
+@@ -23,7 +23,14 @@
+ 	after iptables ip6tables
+ }
  
 +set_http_proxies() {
 +	while read -r line; do
@@ -16,14 +16,11 @@ cat << 'EOF' | (cd /etc/init.d && patch -p0)
 +	done < /etc/environment
 +}
 +
- depend() {
- 	need sysfs cgroups
- }
- 
  start_pre() {
 +	set_http_proxies
  	checkpath -f -m 0644 -o root:docker "$DOCKER_ERRFILE" "$DOCKER_OUTFILE"
  }
+ 
 EOF
 
 
@@ -52,7 +49,7 @@ docker_compose="/usr/bin/docker run \
 -v /var/run/docker.sock:/var/run/docker.sock \
 -v $compose_dir:$compose_dir \
 -w=$compose_dir \
-docker/compose:1.29.1"
+docker/compose:alpine-1.29.2"
 
 depend() {
     need docker
