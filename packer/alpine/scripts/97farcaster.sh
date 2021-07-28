@@ -60,6 +60,6 @@ if !(docker exec -ti gateway ls >/dev/null 2>&1); then
 	echo "  * Make sure that the farcaster containers are installed"
 	exit 1
 fi
-exec docker exec -ti gateway $@
+exec docker exec -ti gateway diag $@
 EOF
 chmod +x /usr/local/bin/diag
