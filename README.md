@@ -128,10 +128,10 @@ We provide three methods to deploy the Agent on your network.
 Please note that only option **1** is officially supported, and has
 seen the most testing.
 
-1. **Using a pre-built VM**.
-The VM contains everything required to run the Agent.
-This should be a simpler approach, if you already have a virtualization solution
-running (Hyper-V, KVM, VirtualBox, VMWare, among others). This is the officially
+1. **Using a pre-built VM disk image**.
+The VM disk image contains everything required to run the Agent.
+This should be a simpler approach, if you already have virtualization infrastructure
+in place (Hyper-V, KVM, VirtualBox, VMWare, among others). This is the officially
 supported method.
 
 1. **Running the containers directly**.
@@ -145,9 +145,9 @@ Building from source allows controlling every aspect of the Farcaster Agent.
 
 ## Option 1: Virtual Machine (recommended)
 
-The Agent VM is available as a qcow2 or vmdk disk image.
+We provide VM disk images in qcow2 and vmdk formats.
 
-You should be able to import the disk image on any modern virtualization solution.
+You should be able to import a disk image on any modern virtualization solution.
 If are having issues launching the VM, or require a specific VM disk format, please contact us
 through our support channels.
 
@@ -160,9 +160,11 @@ The VM archive name is `probely-onprem-agent-<version>.{qcow2,vmdk.zip}`
 * Create a new VM and allocate the required system resources, as defined in the
 [System Resources](#system-resources) section
 
-* Add the VM disk image (qcow2 or vmdk)
+* Select the proper VM disk image:
+  * qcow2 - for KVM, and Xen
+  * vmdk - for VMWare, VirtualBox, HyperV, and others
 
-* Start the VM
+* Launch the VM
 
 * After the VM boots, use the default Agent credentials to log in
 (user: `probely`, password: `changeme`)
@@ -186,7 +188,18 @@ The VM archive name is `probely-onprem-agent-<version>.{qcow2,vmdk.zip}`
   Enabling SSH public-key authentication is outside the scope of this document,
   but we can assist you in doing so through the support channels.
 
-* You should have a `probely-onprem-agent-<id>.run` file, which is an
+* Before installing the agent containers, check host requirements:
+  ```bash
+  host-check
+  ```
+
+  Verify that the checks succeeded:
+  ```bash
+  Checking if Docker is installed...                              [ok]
+  Launching test container...                                     [ok]
+  ```
+
+* Make sure you have a `probely-onprem-agent-<id>.run` file, which is an
 installer script tailored to your specific Agent.
 
   If you do not have an installer, you can create one in the
@@ -218,23 +231,16 @@ Machine:
 * Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
-
   ```bash
-  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "latest handshake"
+  sudo docker exec -ti gateway diag check-network
   ```
-
-  You should see a `latest handshake: N seconds/minutes ago` message.
-
-  If so, **you can start scanning on-premises targets using Probely**
-
-  If not, check if WireGuard is connecting to the agent Hub:
   
+  Verify that the checks succeeded:
   ```bash
-  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
-  ````
-  
-  If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
-  suggests that there is a network/firewall configuration issue.
+  Checking if WireGuard tunnel is up                                         [ok]
+  Checking if https://api.probely.com is reachable                           [ok]
+  Checking if https://google.com is reachable                                [ok]
+  ```
 
   > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
@@ -247,7 +253,7 @@ options on your platform to work properly.
 For optimal performance, you should run the the container on a host with kernel support
 for [WireGuard](https://www.wireguard.com/install/).
 If WireGuard support is not detected, the Agent will use
-[boringtun](https://github.com/cloudflare/boringtun) as a fallback option.
+[wireguard-go](https://git.zx2c4.com/wireguard-go/about/) as a fallback option.
 
 You should have a `probely-onprem-agent-<id>.run` file, which is an
 installer script tailored to your specific Agent.
@@ -273,6 +279,19 @@ Both [Docker](https://docs.docker.com/engine/install/) and
 for these instructions to work. Please follow this procedure on a VM with those
 requirements met.
 
+* Before installing the agent containers, check that your host can run them:
+  ```bash
+  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/master/diag/host-check.sh
+  chmod +x host-check.sh
+  ./host-check.sh
+  ```
+
+  Verify that the checks succeeded:
+  ```bash
+  Checking if Docker is installed...                              [ok]
+  Launching test container...                                     [ok]
+  ```
+
 * Run the following commands to extract the Agent keys and configuration files
 from the Agent installer:
 
@@ -292,23 +311,16 @@ from the Agent installer:
 * Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
-
   ```bash
-  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "latest handshake"
+  sudo docker exec -ti gateway diag check-network
   ```
-
-  You should see a `latest handshake: N seconds/minutes ago` message.
-
-  If so, **you can start scanning on-premises targets using Probely.**
-
-  If not, check if WireGuard is connecting to the agent Hub:
   
+  Verify that the checks succeeded:
   ```bash
-  sudo docker exec -ti tunnel /usr/bin/wg show wg-tunnel | grep "transfer"
-  ````
-  
-  If the number of received bytes is 0 (`transfer: 0 B received, x B sent`), this strongly
-  suggests that there is a network/firewall configuration issue.
+  Checking if WireGuard tunnel is up                                         [ok]
+  Checking if https://api.probely.com is reachable                           [ok]
+  Checking if https://google.com is reachable                                [ok]
+  ```
 
   > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   > is properly configured.
@@ -397,7 +409,7 @@ from the ones we currently support, please contact Probely's support.
 * Run these commands:
 
   ```bash
-  cd packer
+  cd packer/alpine
   make
   ```
 
