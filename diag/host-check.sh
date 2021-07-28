@@ -85,17 +85,6 @@ if [ ${ret} -ne 0 ]; then
 fi
 
 echo
-echo "Host checks passed. You should be able to launch the Agent containers."
-echo
-echo "After the containers are started, you may run additional diagnostics:"
-echo
-echo "* Check gateway logs"
-echo "  docker logs -f gateway"
-echo
-echo "* Check basic connectivity"
-echo "  docker exec -ti gateway diag check-network"
-echo
-echo "* Check if a specific target is reachable"
-echo "  docker exec -ti gateway diag check-http <url>"
-echo "  example: docker exec -ti gateway diag check-http https://10.0.0.1:8443"
+echo "Host checks passed!"
+echo "You should be able to install and launch the Agent containers."
 echo
