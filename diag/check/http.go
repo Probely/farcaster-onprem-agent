@@ -1,6 +1,7 @@
 package check
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,12 @@ import (
 
 var client = &http.Client{
 	Timeout: time.Second * 20,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
 }
 
 type HTTPResult struct {
