@@ -8,10 +8,10 @@ RUN set -eux \
     && cargo build --release
 
 
-FROM golang:1.16-alpine as go_builder
+FROM golang:1.17-alpine as go_builder
 COPY ./diag /build/diag
-ARG wg_go_branch=0.0.20210424
-ARG wg_tools_branch=v1.0.20210424
+ARG wg_go_branch=0.0.20211016
+ARG wg_tools_branch=v1.0.20210914
 ENV WITH_WGQUICK=yes
 RUN set -eux \
     && mkdir -p /build \
