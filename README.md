@@ -122,9 +122,8 @@ file on the agent VM. **Please note that the proxy is used for web access only.
 The agent itself still needs access to hub.farcaster.probely.com on UDP port 443,
 even if a proxy is defined.**
 4. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
-5. This server receives connections from potentially vulnerable servers on your infrastructure.
-It is used to detected "log4shell"-type vulnerabilities, for example.
-
+5. This server receives connections from potentially vulnerable systems on your infrastructure.
+It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 # Installation
 
