@@ -104,7 +104,8 @@ means: *all ports from 1024 to 2048, inclusive*.
 | DNS            | `agent-ip` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | DHCP           | `agent-ip` | `any`                                | `UDP`        | `67:68`              | `67:68`                |
 | Scan           | `agent-ip` | `<scan-target>`<sup>1</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>2</sup>    |
-| Docker         | `agent-ip` | `auth.docker.io`, `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`                  |
+| OOB Vulnerability Check <sup>5</sup> | `target-ip` | `52.17.201.157`| `TCP`, `UDP`| `*`                  | `*`    |
+| Docker         | `agent-ip` | `auth.docker.io`, `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`        |
 | Update servers | `agent-ip` | `dl-cdn.alpinelinux.org`<sup>3, 4</sup> | `TCP`        | `1024:65535`         | `80`, `443`              |
 
 Notes:
@@ -120,7 +121,10 @@ can use an HTTP proxy server to reach the web. The proxy can be set in the `/etc
 file on the agent VM. **Please note that the proxy is used for web access only.
 The agent itself still needs access to hub.farcaster.probely.com on UDP port 443,
 even if a proxy is defined.**
-4. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`.
+4. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
+5. This server receives connections from potentially vulnerable servers on your infrastructure.
+It is used to detected "log4shell"-type vulnerabilities, for example.
+
 
 # Installation
 
