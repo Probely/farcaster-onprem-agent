@@ -18,21 +18,21 @@ The rest of this document assumes a recent kernel.
    kubectl -n farcaster apply -f farcaster-secrets.yaml 
    ````
 4. Deploy the agent pods
-  ```shell
-  git clone https://github.com/Probely/farcaster-onprem-agent.git
-  cd farcaster-onprem-agent/contrib/kubernetes
-  kubectl -n farcaster apply -f probely-agent-depl.yaml
-  ```
+   ```shell
+   git clone https://github.com/Probely/farcaster-onprem-agent.git
+   cd farcaster-onprem-agent/contrib/kubernetes
+   kubectl -n farcaster apply -f probely-agent-depl.yaml
+   ```
 5. Check that the agent is working properly
-  ```shell
-  kubectl -n farcaster logs -f probely-onprem-agent-<id> -c gateway
-  ```
-  You should see output similar to:
-  ```shell
-  Setting up firewall and NAT rules       ... done
-  Starting local DNS resolver     ... done
-  Checking if a proxy is required ... done
-  Starting WireGuard connections  ... done
-  
-  Running...
-  ```
+   ```shell
+   kubectl -n farcaster logs -f probely-onprem-agent-<id> -c gateway
+   ```
+   You should see output similar to:
+   ```shell
+   Setting up firewall and NAT rules       ... done
+   Starting local DNS resolver     ... done
+   Checking if a proxy is required ... done
+   Starting WireGuard connections  ... done
+
+   Running...
+   ```
