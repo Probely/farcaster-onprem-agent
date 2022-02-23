@@ -1,7 +1,7 @@
 # Installing the Agent on a Kubernetes Cluster
 
 In this directory, we provide two Kubernetes deployment manifests:
-  * `probely-agent-depl.yaml`: this is the recommended way to use the agent. Use it if your kernel version if >= 5.6
+  * `probely-agent-depl.yaml`: this is the recommended way to use the agent. Use it if your kernel version is >= 5.6
   * `probely-agent-fallback-depl.yaml`: use this manifest to install the agent on older kernels.
 
 The rest of this document assumes a recent kernel.
