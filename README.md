@@ -146,7 +146,7 @@ you are running the agent this way.
 1. **Building the VM and containers from source**.
 Building from source allows controlling every aspect of the Farcaster Agent.
 
-## Option 1: Virtual Machine (recommended)
+## Option 1: Probely Official Virtual Machine (recommended)
 
 We provide VM disk images in qcow2 and vmdk formats.
 
