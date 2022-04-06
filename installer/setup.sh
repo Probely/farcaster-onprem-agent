@@ -3,10 +3,7 @@
 set -eo pipefail
 umask 077
 
-if [ "$1" == "--local" ]; then
-    DEPLOY_PATH="."
-    INSTALL_INIT=0
-else
+if [ "$1" == "--system" ]; then
     if [ "$(id -u)" != "0" ]; then
         echo "Sorry, but you need root privileges to run the installer"
         echo
@@ -14,6 +11,9 @@ else
     fi
     DEPLOY_PATH=/var/lib/farcaster/onprem
     INSTALL_INIT=1
+else
+    DEPLOY_PATH="."
+    INSTALL_INIT=0
 fi
 
 DOCKER_IMAGE="${DOCKER_IMAGE:-probely/farcaster-onprem-agent:latest}"
