@@ -1,48 +1,59 @@
-FROM rust:alpine as rust_builder
-ENV moproxy_tag=v0.3.9
+FROM --platform=$BUILDPLATFORM rust as rust_builder
+ENV moproxy_tag=v0.3.10
+ARG TARGETARCH
 RUN set -eux \
-    && apk add --no-cache git build-base \
+    && { [ "${TARGETARCH}" = "arm64" ] && TARGETARCH="aarch64" || TARGETARCH="x86-64"; } \
+    && RUST_TARGET="$(echo $TARGETARCH | tr '-' '_')" \
+    && apt-get update -y \
+    && apt-get install -y git libc-dev gcc-${TARGETARCH}-linux-gnu binutils-${TARGETARCH}-linux-gnu \
     && git clone https://github.com/sorz/moproxy \
     && cd moproxy \
     && git checkout -b tags/$moproxy_tag \
-    && cargo build --release
+    && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
+    && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-10" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
+    && mkdir -p target/release \
+    && cp target/${RUST_TARGET}-unknown-linux-gnu/release/moproxy target/release
 
 
-FROM golang:1.17-alpine as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.18 as go_builder
 COPY ./diag /build/diag
-ARG wg_go_branch=0.0.20211016
-ARG wg_tools_branch=v1.0.20210914
-ENV WITH_WGQUICK=yes
+ARG wg_go_tag=0.0.20220316
+ARG TARGETARCH
 RUN set -eux \
     && mkdir -p /build \
     && cd /build \
-    && apk add --update git build-base libmnl-dev iptables \
+    && apt-get update -y \
+    && apt-get install -y git libc-dev gcc libmnl-dev iptables \
     && git clone https://git.zx2c4.com/wireguard-go \
     && cd wireguard-go \
-    && git checkout -b $wg_go_branch \
-    && make \
-    && make install \
-    && cd - \
-    && git clone https://git.zx2c4.com/wireguard-tools \
-    && cd wireguard-tools/src \
-    && git checkout -b $wg_tools_branch \
-    && make \
-    && make install \
+    && git checkout tags/${wg_go_tag} -b ${wg_go_tag} \
+    && env GOOS=linux GOARCH=$TARGETARCH make \
+    && env GOOS=linux GOARCH=$TARGETARCH make install \
     && cd - \
     && cd diag \
-    && make \
+    && env GOOS=linux GOARCH=$TARGETARCH make \
     && cd -
 
 
-FROM alpine:3.14
+FROM debian:bullseye-slim
 COPY ./bin/. /farcaster/bin/
-COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/wg* /usr/bin/
+COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
 COPY --from=go_builder /build/diag/diag /usr/local/bin/
 COPY --from=rust_builder /moproxy/target/release/moproxy /usr/bin
 RUN set -eux \
     && umask 077 \
-    && apk add --no-cache --update \
-        bash libmnl iptables openresolv iproute2 dnsmasq bind-tools curl \
+    && apt-get update -y \
+    && apt-get install -y --no-install-suggests --no-install-recommends \
+       bash \
+       libmnl0 \
+       iptables \
+       openresolv \
+       iproute2 \
+       dnsmasq \
+       dnsutils \
+       curl \
+       wireguard-tools \
+    && apt-get clean \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
     && ln -s /secrets/farcaster/data/wg-tunnel.conf /farcaster/etc/ \
     && ln -s /secrets/farcaster/data/wg-gateway.conf /farcaster/etc/ \
@@ -50,8 +61,10 @@ RUN set -eux \
     && ln -s /run /var/run \
     && mkdir -p /secrets/farcaster/data \
     && chmod +x /farcaster/bin/* \
-    && addgroup -S proxy && adduser -S proxy -G proxy \
-    && addgroup -S diag && adduser -S diag -G diag \
+    && { useradd --system --home-dir / --shell /bin/false proxy || true; } \
+    && useradd --system --home-dir / --shell /bin/false diag \
     && chgrp diag /usr/local/bin/diag \
-    && chmod g+s /usr/local/bin/diag
+    && chmod g+s /usr/local/bin/diag \
+    && /usr/local/bin/diag \
+    && /usr/bin/wireguard-go
 
