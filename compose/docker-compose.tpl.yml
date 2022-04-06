@@ -5,6 +5,7 @@ services:
     image: {{DOCKER_IMAGE}}
     container_name: gateway
     command: /farcaster/bin/start-gateway.sh
+    stop_grace_period: 3s
     volumes:
     - {{SECRETS_PATH}}/gateway:/secrets/farcaster/data:z,ro
     devices:
@@ -27,6 +28,7 @@ services:
     image: {{DOCKER_IMAGE}}
     container_name: tunnel
     command: /farcaster/bin/start-tunnel.sh
+    stop_grace_period: 3s
     network_mode: service:gateway
     volumes:
     - {{SECRETS_PATH}}/tunnel:/secrets/farcaster/data:z,ro
