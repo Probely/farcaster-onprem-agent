@@ -147,32 +147,35 @@ start_dnsmasq() {
 
 get_proxy_username() {
 	echo "${HTTP_PROXY:-}" |
-		sed -r 's/^http(s)?\:\/\///' |
-		grep '@' |
-		sed 's/@[^@]*$//' |
-		cut -d ':' -f 1 || echo ""
+	sed -e 's/^"//' -e 's/"$//' |
+	sed -r 's/^http(s)?\:\/\///' |
+	grep '@' |
+	sed 's/@[^@]*$//' |
+	cut -d ':' -f 1 || echo ""
 }
 
 get_proxy_password() {
 	echo "${HTTP_PROXY:-}" |
-		sed -r 's/^http(s)?\:\/\///' |
-		grep '@' |
-		sed 's/@[^@]*$//' |
-		cut -d ':' -f 2 || echo ""
+	sed -e 's/^"//' -e 's/"$//' |
+	sed -r 's/^http(s)?\:\/\///' |
+	grep '@' |
+	sed 's/@[^@]*$//' |
+	cut -d ':' -f 2 || echo ""
 }
 
 get_proxy_address() {
 	echo "${HTTP_PROXY:-}" |
-		sed -r 's/^http(s)?\:\/\///' |
-        sed -r 's/\/.*//' |
-		sed 's/^.*@//'
+	sed -e 's/^"//' -e 's/"$//' |
+	sed -r 's/^http(s)?\:\/\///' |
+	sed -r 's/\/.*//' |
+	sed 's/^.*@//'
 }
 
 
 get_proxy_host() {
 	echo "$1" |
-		sed -r 's/^http(s)?\:\/\///' |
-        cut -d ':' -f 1
+	sed -r 's/^http(s)?\:\/\///' |
+	cut -d ':' -f 1
 }
 
 get_proxy_port() {

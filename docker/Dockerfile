@@ -67,6 +67,8 @@ RUN set -eux \
     && useradd --system --home-dir / --shell /bin/false diag \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
+    # Make sure that binaries were properly built
+    && /usr/bin/moproxy --help \
     && /usr/local/bin/diag \
     && /usr/bin/wireguard-go
 
