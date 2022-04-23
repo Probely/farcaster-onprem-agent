@@ -57,14 +57,15 @@ RUN set -eux \
     && update-alternatives --set iptables /usr/sbin/iptables-legacy \
     && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
-    && ln -s /secrets/farcaster/data/wg-tunnel.conf /farcaster/etc/ \
-    && ln -s /secrets/farcaster/data/wg-gateway.conf /farcaster/etc/ \
+    && ln -s /run/farcaster/wg-tunnel.conf /farcaster/etc/ \
+    && ln -s /run/farcaster/wg-gateway.conf /farcaster/etc/ \
     && rm -rf /var/run \
     && ln -s /run /var/run \
     && mkdir -p /secrets/farcaster/data \
     && chmod +x /farcaster/bin/* \
     && { useradd --system --home-dir / --shell /bin/false proxy || true; } \
     && useradd --system --home-dir / --shell /bin/false diag \
+    && useradd --system --home-dir / --shell /bin/false tcptun \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
     # Make sure that binaries were properly built

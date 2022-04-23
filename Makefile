@@ -2,9 +2,13 @@ CONTAINER=farcaster-onprem-agent
 TAG=probely/$(CONTAINER):${IMAGE_TAG}
 PLATFORMS=linux/arm64,linux/amd64
 
-.PHONY: all build clean prepare check-rust check-docker
+.PHONY: build build-local clean prepare check-env
 
 build: check-env
+	docker buildx build --builder multiarch -f docker/Dockerfile --platform $(PLATFORMS) -t $(TAG) --push .
+
+build-local:
+	$(eval PLATFORMS=linux/amd64)
 	docker buildx build --builder multiarch -f docker/Dockerfile --platform $(PLATFORMS) -t $(TAG) --push .
 
 clean:

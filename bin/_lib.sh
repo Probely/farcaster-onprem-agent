@@ -2,18 +2,31 @@
 
 set -euo pipefail
 
+PROXY_REGEXP='^(http(s)?://)?(([0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+)@)?([0-9a-zA-Z._-]+)(:([0-9]+))?$'
+WORKDIR=/run/farcaster
 HUB_IP_TTL=300
 
-start_wireguard() {
+wg_setup_iface() {
+	iface="$1"
+
+	# Check if the kernel has wireguard support
+	ip link add "${iface}" type wireguard 2>/dev/null &&
+	ip link del "${iface}" &&
+	return 0
+
+	create_dev_tun
+	return $?
+}
+
+wg_start() {
 	iface="$1"
 	conf="${FARCASTER_PATH}/etc/${iface}.conf"
-
 	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
 
-	if ! setup_wireguard_iface "${iface}"; then
-        echo "Error setting up Wireguard interface!"
-        return 1
-    fi
+	if ! wg_setup_iface "${iface}"; then
+		echo "Error setting up Wireguard interface!"
+		return 1
+	fi
 
 	WG_SUDO=1 \
 	WG_THREADS=2 \
@@ -22,12 +35,39 @@ start_wireguard() {
 	wg-quick up "${conf}"
 }
 
-get_wg_endpoint() {
+wg_stop() {
+	iface="$1"
+	conf="${FARCASTER_PATH}/etc/${iface}.conf"
+	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
+
+	wg-quick down "${conf}"
+}
+
+wg_update_endpoint() {
+	iface="$1"
+	endpoint="$2"
+	conf="${WORKDIR}/${iface}.conf"
+	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
+
+	sed -i "s/^Endpoint\s*=.*$/Endpoint = ${endpoint}/g" "${conf}"
+}
+
+wg_get_latest_handshake() {
+	iface="$1"
+	for i in $(seq 5); do
+		handshake=$(wg show ${iface} latest-handshakes | awk -F' ' '{print $2}')
+		[ "${handshake}" != "0" ] && echo "${handshake}" && return
+		sleep 2
+	done
+	echo "0"
+}
+
+wg_get_endpoint() {
 	iface="$1"
 	get_addr_from_conf ${iface} "^Endpoint\s*=\s*"
 }
 
-get_wg_addr() {
+wg_get_addr() {
 	iface="$1"
 	get_addr_from_conf ${iface} "^Address\s*=\s*"
 }
@@ -77,7 +117,7 @@ check_hub_ip() {
 	if is_hub_ip_fresh; then
 		return 0
 	fi
-	host="$(get_wg_endpoint ${iface})"
+	host="$(wg_get_endpoint ${iface})"
 	cur_ip="$(resolve_host ${host})"
 	if [ -z "${HUB_IP}" ]; then
 		HUB_IP="${cur_ip}"
@@ -88,7 +128,7 @@ check_hub_ip() {
 	return 0
 }
 
-watch_wireguard() {
+wg_watch_iface() {
 	iface="$1"
 	check_hub=$2
 	while true; do
@@ -118,31 +158,19 @@ create_dev_tun() {
 	return $?
 }
 
-setup_wireguard_iface() {
-	iface="$1"
-
-	# Check if the kernel has wireguard support
-	ip link add "${iface}" type wireguard 2>/dev/null &&
-		ip link del "${iface}" &&
-		return 0
-
-	create_dev_tun
-	return $?
-}
-
 start_dnsmasq() {
-    rundir=/run/dnsmasq
-    lport=1053
-    mkdir -p ${rundir}
-    chmod 0711 ${rundir}
-    dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
-    gw_addr="$(get_wg_addr "${WG_GW_IF}")"
-    for proto in tcp udp; do
-        iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
-            --dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
-        iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
-            -d "${gw_addr}" --dport "${lport}" -j ACCEPT
-    done
+	rundir=/run/dnsmasq
+	lport=1053
+	mkdir -p ${rundir}
+	chmod 0711 ${rundir}
+	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
+	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
+	for proto in tcp udp; do
+		iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
+		    --dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
+		iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
+		    -d "${gw_addr}" --dport "${lport}" -j ACCEPT
+	done
 }
 
 get_proxy_username() {
@@ -171,7 +199,6 @@ get_proxy_address() {
 	sed 's/^.*@//'
 }
 
-
 get_proxy_host() {
 	echo "$1" |
 	sed -r 's/^http(s)?\:\/\///' |
@@ -186,20 +213,30 @@ get_proxy_port() {
     echo "${port}"
 }
 
+start_udp_over_tcp_tunnel() {
+	local_udp_port="$1"
+	remote_ip="$(resolve_host $2)"
+	remote_tcp_port="$3"
+	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
+		/farcaster/bin/udp2tcp --tcp-forward ${remote_ip}:${remote_tcp_port} --udp-listen 127.0.0.1:${local_udp_port} > /dev/null 2>&1 &
+	pid=$!
+	sleep 2
+	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
+}
 
 create_moproxy_config() {
-    config_path="$1"
-    user=$(get_proxy_username)
-    password=$(get_proxy_password)
-    address=$(get_proxy_address)
-    host=$(get_proxy_host "${address}")
-    ipaddr=$(dig +short "${host}" || echo "")
-    ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
-    port=$(get_proxy_port "${address}")
-    auth=$(test ! -z "${user}" && printf "http username = ${user}\nhttp password = ${password}\n" || echo "")
+	config_path="$1"
+	user=$(get_proxy_username)
+	password=$(get_proxy_password)
+	address=$(get_proxy_address)
+	host=$(get_proxy_host "${address}")
+	ipaddr=$(dig +short "${host}" || echo "")
+	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
+	port=$(get_proxy_port "${address}")
+	auth=$(test ! -z "${user}" && printf "http username = ${user}\nhttp password = ${password}\n" || echo "")
 
-    umask 033
-    cat << EOF > ${config_path}
+	umask 033
+	cat << EOF > ${config_path}
 [default]
 address=${ipaddr}:${port}
 protocol=http
@@ -210,47 +247,53 @@ EOF
 }
 
 set_proxy_redirect_rules() {
-    proxy_port="$1"
-    gw_addr="$(get_wg_addr "${WG_GW_IF}")"
-    iptables -t nat -N PROXY-REDIRECT
-    for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
-        iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
-    done
-    iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
-    # Remote traffic arriving in the tunnel
-    iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
-    # Local traffic from the "diag" group. Used for debugging purposes
-    iptables -t nat -I OUTPUT -m owner --gid-owner diag -j PROXY-REDIRECT
-    iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
+	proxy_port="$1"
+	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
+	# Proxy redirect chain
+	iptables -t nat -N PROXY-REDIRECT
+	for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+		iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
+	done
+	iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+
+	# Remote traffic arriving in the tunnel
+	iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+
+	# Local traffic from select users go through the proxy
+	iptables -t nat -I OUTPUT -m owner --uid-owner tcptun -j PROXY-REDIRECT
+	iptables -t nat -I OUTPUT -m owner --gid-owner diag -j PROXY-REDIRECT
+
+	# Make sure traffic is allowed after being redirected
+	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
 }
 
-start_moproxy_maybe() {
-    proxy_port=1080
-    test -z ${HTTP_PROXY:-} && return 0
-    rundir=/run/moproxy
-    mkdir -p ${rundir}
-    chmod 0711 ${rundir}
-    config_path="${rundir}/config.ini"
-    create_moproxy_config ${config_path}
-    set_proxy_redirect_rules ${proxy_port}
-    /bin/su -s /bin/sh -l proxy -c "exec /usr/bin/moproxy --port ${proxy_port} --list ${config_path}" &
-    sleep 5
-    kill -0 $!
-    return $?
+start_proxy_maybe() {
+	proxy_port=1080
+	test -z ${HTTP_PROXY:-} && return 0
+	rundir=/run/moproxy
+	mkdir -p ${rundir}
+	chmod 0711 ${rundir}
+	config_path="${rundir}/config.ini"
+	create_moproxy_config ${config_path}
+	set_proxy_redirect_rules ${proxy_port}
+	/bin/su -s /bin/sh -l proxy -c "exec /usr/bin/moproxy --port ${proxy_port} --list ${config_path}" &
+	sleep 3
+	kill -0 $!
+	return $?
 }
 
 function print_log() {
-    cat ${1}
-    echo
-    echo "===================================================================="
-    echo
-    echo
-    echo "Could not start the agent. Please contact support@probely.com and"
-    echo "attach this log to your message. "
-    echo
-    echo
-    echo "===================================================================="
-    echo
-    sleep 120 
+	cat ${1}
+	echo
+	echo "===================================================================="
+	echo
+	echo
+	echo "Could not start the agent. Please contact support@probely.com and"
+	echo "attach this log to your message. "
+	echo
+	echo
+	echo "===================================================================="
+	echo
+	sleep 120
 }
 

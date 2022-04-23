@@ -12,7 +12,6 @@ services:
     - /dev/net/tun:/dev/net/tun
     tmpfs:
     - /run
-    read_only: true
     cap_drop:
     - ALL
     cap_add:
@@ -36,7 +35,6 @@ services:
     - /dev/net/tun:/dev/net/tun
     tmpfs:
     - /run
-    read_only: true
     depends_on:
     - gateway
     cap_drop:
