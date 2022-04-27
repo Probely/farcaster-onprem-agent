@@ -13,6 +13,7 @@ WG_TUN_IF="wg-tunnel"
 WG_GW_IF="wg-gateway"
 SECRETS_DIR="/secrets/farcaster/data"
 WORK_DIR="/run/farcaster"
+TCP_PROXY_PORT=8080
 UDP2TCP_PORT=8443
 HTTP_PROXY=${HTTP_PROXY:-}
 
@@ -38,7 +39,7 @@ HUB_HOST="$(wg_get_endpoint ${WG_TUN_IF})"
 # Redirect remote DNS request to a local dnsmasq and let it handle the details
 echo -ne "Starting local DNS resolver\t... "
 if ! start_dnsmasq; then
-	echo "error"
+	echo "failed"
 	echo "Could not start local DNS resolver"
 	print_log ${LOG_FILE}
 	exit 1
@@ -47,8 +48,8 @@ echo "done"
 
 # If an HTTP proxy is defined, use it for all TCP connections
 echo -ne "Setting HTTP proxy rules\t... "
-if ! start_proxy_maybe; then
-	echo "error"
+if ! start_proxy_maybe ${TCP_PROXY_PORT}; then
+	echo "failed"
 	echo -n "HTTP_PROXY defined, but could not set traffic redirection rules. "
 	echo "Ensure HTTP_PROXY is correct, and the container has NET_ADMIN capabilities."
 	echo
@@ -65,18 +66,17 @@ if wg_start "${WG_TUN_IF}"; then
 		CONNECTED=1
 		echo "done"
 	else
-		echo "failed - trying fallback"
+		echo "unsuccessful"
 	fi
 fi
 
 UDP2TCP_PID=0
 if [ "${CONNECTED}" = "0" ]; then
-	echo -ne "Starting fallback TCP tunnel\t... "
+	echo -ne "Trying fallback TCP tunnel\t... "
 	UDP2TCP_PID=$(start_udp_over_tcp_tunnel ${UDP2TCP_PORT} ${HUB_HOST} 443)
 	if [ "${UDP2TCP_PID}" == "-1" ]; then
-		echo "error"
-		echo "Could not start fallback TCP tunnel."
 		echo "failed"
+		echo "Could not start fallback TCP tunnel."
 		print_log ${LOG_FILE}
 		exit 1
 	fi
@@ -100,6 +100,25 @@ if [ "${CONNECTED}" = "0" ]; then
 	fi
 fi
 echo "done"
+
+echo -ne "Setting gateway filter and NAT rules\t... "
+if ! set_gw_filter_and_nat_rules; then
+	echo "failed"
+	echo "Could not set gateway filter and NAT rules."
+	print_log ${LOG_FILE}
+	exit 1
+fi
+echo "done"
+
+echo -ne "Starting WireGuard gateway\t... "
+if ! wg_start "${WG_GW_IF}"; then
+	echo "failed"
+	echo "Could not start WireGuard gateway."
+	print_log ${LOG_FILE}
+	exit 1
+fi
+echo "done"
+
 echo
 echo "Running..."
 

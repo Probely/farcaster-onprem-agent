@@ -24,7 +24,6 @@ wg_start() {
 	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
 
 	if ! wg_setup_iface "${iface}"; then
-		echo "Error setting up Wireguard interface!"
 		return 1
 	fi
 
@@ -128,27 +127,17 @@ check_hub_ip() {
 	return 0
 }
 
-wg_watch_iface() {
+wg_check_iface() {
 	iface="$1"
 	check_hub=$2
-	while true; do
-		sleep 5
-		if ! ip link show dev "${iface}" >/dev/null 2>&1; then
-			echo "${iface} interface is down. Exiting..."
-			return 1
-		fi
-		if [ ${check_hub} -ne 0 ] && ! check_hub_ip "${iface}"; then
-			echo "Farcaster Hub address has changed. Exiting..."
-			return 0
-		fi
-	done
-}
-
-wait_for_dev_tun() {
-	while [ ! -c /dev/net/tun ]; do
-		echo "Waiting for tun device to become available..."
-		sleep 1
-	done
+	if ! ip link show dev "${iface}" >/dev/null 2>&1; then
+		echo "${iface} interface is down. Exiting..."
+		return 1
+	fi
+	if [ ${check_hub} -ne 0 ] && ! check_hub_ip "${iface}"; then
+		echo "Farcaster Hub address has changed. Exiting..."
+		return 2
+	fi
 }
 
 create_dev_tun() {
@@ -226,6 +215,7 @@ start_udp_over_tcp_tunnel() {
 
 create_moproxy_config() {
 	config_path="$1"
+	listen_port="$2"
 	user=$(get_proxy_username)
 	password=$(get_proxy_password)
 	address=$(get_proxy_address)
@@ -241,7 +231,7 @@ create_moproxy_config() {
 address=${ipaddr}:${port}
 protocol=http
 test dns=127.0.0.1:53
-listen ports=1080
+listen ports=${listen_port}
 ${auth}
 EOF
 }
@@ -267,22 +257,55 @@ set_proxy_redirect_rules() {
 	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
 }
 
+function set_gw_filter_and_nat_rules() {
+	iptables -N FARCASTER-FILTER
+	iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+	iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
+	iptables -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
+		--ctstate ESTABLISHED,RELATED -j ACCEPT
+	iptables -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
+		--ctstate ESTABLISHED,RELATED -j ACCEPT
+	iptables -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
+
+	iptables -F INPUT
+	iptables -P INPUT DROP
+	iptables -A INPUT -j FARCASTER-FILTER
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
+
+	iptables -F FORWARD
+	iptables -P FORWARD DROP
+	iptables -A FORWARD -j FARCASTER-FILTER
+	iptables -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
+
+	iptables -t nat -N FARCASTER-NAT
+	iptables -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
+	iptables -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
+	iptables -t nat -A FARCASTER-NAT -j MASQUERADE
+	iptables -t nat -F POSTROUTING
+	iptables -t nat -A POSTROUTING -j FARCASTER-NAT
+}
+
 start_proxy_maybe() {
-	proxy_port=1080
+	listen_port="$1"
 	test -z ${HTTP_PROXY:-} && return 0
 	rundir=/run/moproxy
 	mkdir -p ${rundir}
 	chmod 0711 ${rundir}
 	config_path="${rundir}/config.ini"
-	create_moproxy_config ${config_path}
+	create_moproxy_config ${config_path} ${listen_port}
 	set_proxy_redirect_rules ${proxy_port}
-	/bin/su -s /bin/sh -l proxy -c "exec /usr/bin/moproxy --port ${proxy_port} --list ${config_path}" &
+	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
+		/usr/bin/moproxy --port ${proxy_port} --list ${config_path} &
 	sleep 3
 	kill -0 $!
 	return $?
 }
 
 function print_log() {
+	echo
+	echo
+	echo
 	cat ${1}
 	echo
 	echo "===================================================================="
