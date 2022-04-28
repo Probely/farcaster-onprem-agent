@@ -5,6 +5,7 @@ set -euo pipefail
 PROXY_REGEXP='^(http(s)?://)?(([0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+)@)?([0-9a-zA-Z._-]+)(:([0-9]+))?$'
 WORKDIR=/run/farcaster
 HUB_IP_TTL=300
+WG_DEFAULT_PORT=51820
 
 wg_setup_iface() {
 	iface="$1"
@@ -207,7 +208,7 @@ start_udp_over_tcp_tunnel() {
 	remote_ip="$(resolve_host $2)"
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
-		/farcaster/bin/udp2tcp --tcp-forward ${remote_ip}:${remote_tcp_port} --udp-listen 127.0.0.1:${local_udp_port} > /dev/null 2>&1 &
+		nohup /usr/local/bin/udp2tcp --tcp-forward ${remote_ip}:${remote_tcp_port} --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
 	pid=$!
 	sleep 2
 	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
@@ -249,9 +250,9 @@ set_proxy_redirect_rules() {
 	# Remote traffic arriving in the tunnel
 	iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
 
-	# Local traffic from select users go through the proxy
-	iptables -t nat -I OUTPUT -m owner --uid-owner tcptun -j PROXY-REDIRECT
-	iptables -t nat -I OUTPUT -m owner --gid-owner diag -j PROXY-REDIRECT
+	# Local TCP traffic from specific services go through the proxy
+	iptables -t nat -I OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
+	iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
 	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
@@ -294,9 +295,9 @@ start_proxy_maybe() {
 	chmod 0711 ${rundir}
 	config_path="${rundir}/config.ini"
 	create_moproxy_config ${config_path} ${listen_port}
-	set_proxy_redirect_rules ${proxy_port}
+	set_proxy_redirect_rules ${listen_port}
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		/usr/bin/moproxy --port ${proxy_port} --list ${config_path} &
+		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
