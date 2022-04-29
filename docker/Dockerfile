@@ -89,3 +89,4 @@ RUN set -eux \
     && /usr/local/bin/diag >/dev/null 2>&1 \
     && /usr/bin/wireguard-go >/dev/null 2>&1
 
+ENTRYPOINT ["/farcaster/bin/run.sh"]

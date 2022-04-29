@@ -26,6 +26,7 @@ spec:
             - NET_ADMIN
       containers:
       - name: agent
+        privileged: true
         image: probely/farcaster-onprem-agent:v2
         imagePullPolicy: Always
         resources:
@@ -40,6 +41,8 @@ spec:
         - name: farcaster-secrets
           mountPath: /secrets/farcaster/data
           readOnly: true
+        - name: host-tun-dev
+          mountPath: /dev/net/tun
       volumes:
       - name: farcaster-secrets
         projected:
@@ -48,5 +51,9 @@ spec:
               name: farcaster-tunnel-secrets
           - secret:
               name: farcaster-gateway-secrets
+      - name: host-tun-dev
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
       terminationGracePeriodSeconds: 3
   minReadySeconds: 2

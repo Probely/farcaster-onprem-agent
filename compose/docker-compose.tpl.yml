@@ -1,45 +1,16 @@
 version: '3.3'
 
 services:
-  gateway:
+  agent:
     image: {{DOCKER_IMAGE}}
-    container_name: gateway
-    command: /farcaster/bin/start-gateway.sh
-    stop_grace_period: 3s
+    container_name: probely-agent
+    stop_grace_period: 1s
     volumes:
-    - {{SECRETS_PATH}}/gateway:/secrets/farcaster/data:z,ro
+    - {{SECRETS_PATH}}:/secrets/farcaster/data:z,ro
     devices:
     - /dev/net/tun:/dev/net/tun
     tmpfs:
     - /run
-    cap_drop:
-    - ALL
     cap_add:
-    - DAC_OVERRIDE
     - NET_ADMIN
-    - NET_RAW
-    - SETUID
-    - SETGID
-    - KILL
-    restart: always
-
-  tunnel:
-    image: {{DOCKER_IMAGE}}
-    container_name: tunnel
-    command: /farcaster/bin/start-tunnel.sh
-    stop_grace_period: 3s
-    network_mode: service:gateway
-    volumes:
-    - {{SECRETS_PATH}}/tunnel:/secrets/farcaster/data:z,ro
-    devices:
-    - /dev/net/tun:/dev/net/tun
-    tmpfs:
-    - /run
-    depends_on:
-    - gateway
-    cap_drop:
-    - ALL
-    cap_add:
-    - DAC_OVERRIDE
-    - NET_ADMIN
-    restart: always
+    restart: unless-stopped

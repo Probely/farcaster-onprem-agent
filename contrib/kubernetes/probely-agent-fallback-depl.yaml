@@ -1,26 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-    name: probely-onprem-agent
+    name: probely-agent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: probely-onprem-agent
+      app: probely-agent
   template:
     metadata:
       labels:
-        app: probely-onprem-agent
+        app: probely-agent
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchLabels:
-                  app: probely-onprem-agent
-              topologyKey: kubernetes.io/hostname
       initContainers:
       - name: init
         image: busybox:stable
@@ -34,81 +25,34 @@ spec:
             add:
             - NET_ADMIN
       containers:
-      - name: gateway
-        image: probely/farcaster-onprem-agent:latest
-        command:
-        - /farcaster/bin/start-gateway.sh
+      - name: agent
+        image: probely/farcaster-onprem-agent:v2
         imagePullPolicy: Always
         resources:
           requests:
             cpu: 250m
             memory: 128Mi
         securityContext:
-          readOnlyRootFilesystem: true
           capabilities:
-            drop:
-            - ALL
             add:
-            - DAC_OVERRIDE
             - NET_ADMIN
-            - NET_RAW
-            - SETUID
-            - SETGID
-            - KILL
         volumeMounts:
-        - name: gateway-run
-          mountPath: /run
-        - name: farcaster-gateway-secrets
+        - name: farcaster-secrets
           mountPath: /secrets/farcaster/data
           readOnly: true
         - name: host-tun-dev
           mountPath: /dev/net/tun
-      - name: tunnel
-        image: probely/farcaster-onprem-agent:latest
-        command:
-        - /farcaster/bin/start-tunnel.sh
-        imagePullPolicy: Always
-        resources:
-          requests:
-            cpu: 250m
-            memory: 128Mi
-        securityContext:
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-            add:
-            - DAC_OVERRIDE
-            - NET_ADMIN
-        volumeMounts:
-        - name: tunnel-run
-          mountPath: /run
-        - name: farcaster-tunnel-secrets
-          mountPath: /secrets/farcaster/data
-          readOnly: true
-        - name: host-tun-dev
-          mountPath: /dev/net/tun
-
       volumes:
-      - name: tunnel-run
-        emptyDir:
-          medium: Memory
-          sizeLimit: 5Mi
-      - name: gateway-run
-        emptyDir:
-          medium: Memory
-          sizeLimit: 5Mi
-      - name: farcaster-tunnel-secrets
-        secret:
-          secretName: farcaster-tunnel-secrets
-          defaultMode: 256
-      - name: farcaster-gateway-secrets
-        secret:
-          secretName: farcaster-gateway-secrets
-          defaultMode: 256
+      - name: farcaster-secrets
+        projected:
+          sources:
+          - secret:
+              name: farcaster-tunnel-secrets
+          - secret:
+              name: farcaster-gateway-secrets
       - name: host-tun-dev
         hostPath:
           path: /dev/net/tun
           type: CharDevice
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 3
   minReadySeconds: 2

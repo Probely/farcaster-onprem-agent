@@ -1,15 +1,23 @@
 CONTAINER=farcaster-onprem-agent
-TAG=probely/$(CONTAINER):${IMAGE_TAG}
+REPO=probely/$(CONTAINER)
 PLATFORMS=linux/arm64,linux/amd64
+VER_MAJOR=$(shell echo ${VERSION} | awk -F'.' '{print $$1}')
+VER_MINOR=$(shell echo ${VERSION} | awk -F'.' '{print $$2}')
 
 .PHONY: build build-local clean prepare check-env
 
 build: check-env
-	docker buildx build --builder multiarch -f docker/Dockerfile --platform $(PLATFORMS) -t $(TAG) --push .
+	docker buildx build --builder multiarch -f docker/Dockerfile \
+		--platform $(PLATFORMS) \
+		-t $(REPO):$(VER_MAJOR) -t $(REPO):$(VER_MAJOR).$(VER_MINOR) -t $(REPO):$(VERSION) \
+		--push .
 
-build-local:
+build-local: check-env
 	$(eval PLATFORMS=linux/amd64)
-	docker buildx build --builder multiarch -f docker/Dockerfile --platform $(PLATFORMS) -t $(TAG) --push .
+	docker buildx build --builder multiarch -f docker/Dockerfile \
+		--platform $(PLATFORMS) \
+		-t $(REPO):$(VER_MAJOR) -t $(REPO):$(VER_MAJOR).$(VER_MINOR) -t $(REPO):$(VERSION) \
+		--push .
 
 clean:
 	docker buildx --builder multiarch prune
@@ -19,6 +27,6 @@ prepare:
 	docker buildx inspect --builder multiarch --bootstrap
 
 check-env:
-ifndef IMAGE_TAG
-	$(error IMAGE_TAG env variable is undefined)
+ifndef VERSION
+	$(error VERSION env variable is undefined)
 endif

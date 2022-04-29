@@ -13,16 +13,9 @@ if [ "${SECRETS_PATH}" = "" ]; then
 fi
 
 if [ "${DOCKER_IMAGE}" == "" ]; then
-    DOCKER_IMAGE="probely/farcaster-onprem-agent"
+    DOCKER_IMAGE="probely/farcaster-onprem-agent:v2"
 fi
 
 cat "${SRCDIR}/docker-compose.tpl.yml" |
 	sed "s#{{SECRETS_PATH}}#${SECRETS_PATH}#g" | \
     sed "s#{{DOCKER_IMAGE}}#${DOCKER_IMAGE}#g"
-cat << EOF
-
-networks:
-  default:
-    external:
-      name: farcaster
-EOF

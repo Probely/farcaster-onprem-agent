@@ -156,7 +156,7 @@ while true; do
 		break
 	fi
 	last_tunnel_handshake=${tunnel_handshake}
-	sleep 120
+	sleep 10
 done
 
 sleep 5
