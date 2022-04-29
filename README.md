@@ -161,17 +161,17 @@ from the Agent installer:
   ```
   If everything is running correctly, you should see an output similar to:
   ```bash
-$ docker-compose up
-Creating network "agent_default" with the default driver
-Creating probely-agent ... done
-Attaching to probely-agent
-probely-agent | Starting local DNS resolver     ... done
-probely-agent | Setting HTTP proxy rules        ... done
-probely-agent | Connecting to Probely           ... done
-probely-agent | Setting local gateway rules     ... done
-probely-agent | Starting WireGuard gateway      ... done
-probely-agent |
-probely-agent | Running..
+  $ docker-compose up
+  Creating network "agent_default" with the default driver
+  Creating probely-agent ... done
+  Attaching to probely-agent
+  probely-agent | Starting local DNS resolver     ... done
+  probely-agent | Setting HTTP proxy rules        ... done
+  probely-agent | Connecting to Probely           ... done
+  probely-agent | Setting local gateway rules     ... done
+  probely-agent | Starting WireGuard gateway      ... done
+  probely-agent |
+  probely-agent | Running..
   ```
 
   > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
