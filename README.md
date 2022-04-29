@@ -161,7 +161,7 @@ from the Agent installer:
   docker logs -ti probely-agent
   ```
 
-  If everything is running correctly, you should see an output similar to:
+  If everything is running correctly, you should see output similar to:
   ```
   Starting local DNS resolver     ... done
   Setting HTTP proxy rules        ... done
