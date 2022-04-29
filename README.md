@@ -174,6 +174,16 @@ from the Agent installer:
 
   If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
   is properly configured.
+  
+  Alternatively, the agent can use an HTTP proxy to connect to Probely, by creating an
+  UDP over TCP tunnel.
+  
+  You can enable this by setting the `HTTP_PROXY` environment variable on the container.
+  While the agent should be able to use a proxy to connect to Probely, note that this
+  may result in poor network performance.
+  
+  We **strongly** recommend that you enable the agent to connect to
+  `hub.farcaster.probely.com` on `UDP port 443` to ensure optimal network performance.
 
 # Building from source
 
