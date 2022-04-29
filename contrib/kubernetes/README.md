@@ -25,14 +25,15 @@ The rest of this document assumes a recent kernel.
    ```
 5. Check that the agent is working properly
    ```shell
-   kubectl -n farcaster logs -f probely-onprem-agent-<id> -c gateway
+   kubectl -n farcaster logs -f probely-onprem-agent-<id>
    ```
    You should see output similar to:
-   ```shell
-   Setting up firewall and NAT rules       ... done
+   ```
    Starting local DNS resolver     ... done
-   Checking if a proxy is required ... done
-   Starting WireGuard connections  ... done
+   Setting HTTP proxy rules        ... done
+   Connecting to Probely           ... done
+   Setting local gateway rules     ... done
+   Starting WireGuard gateway      ... done
 
    Running...
    ```
