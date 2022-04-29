@@ -157,7 +157,7 @@ from the Agent installer:
 
   After starting the Agent, it should link-up with Probely. Run the following command:
   ```bash
-  docker logs -ti probely-agent
+  docker logs probely-agent
   ```
 
   If everything is running correctly, you should see output similar to:
