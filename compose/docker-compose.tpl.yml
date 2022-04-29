@@ -5,6 +5,8 @@ services:
     image: {{DOCKER_IMAGE}}
     container_name: probely-agent
     stop_grace_period: 1s
+    environment:
+    - HTTP_PROXY
     volumes:
     - {{SECRETS_PATH}}:/secrets/farcaster/data:z,ro
     devices:
