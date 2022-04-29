@@ -16,8 +16,8 @@ build-local: check-env
 	$(eval PLATFORMS=linux/amd64)
 	docker buildx build --builder multiarch -f docker/Dockerfile \
 		--platform $(PLATFORMS) \
-		-t $(REPO):$(VER_MAJOR) -t $(REPO):$(VER_MAJOR).$(VER_MINOR) -t $(REPO):$(VERSION) \
-		--push .
+		-t $(REPO):$(VERSION) \
+		.
 
 clean:
 	docker buildx --builder multiarch prune
