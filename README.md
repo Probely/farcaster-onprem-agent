@@ -171,11 +171,11 @@ from the Agent installer:
   probely-agent | Setting local gateway rules     ... done
   probely-agent | Starting WireGuard gateway      ... done
   probely-agent |
-  probely-agent | Running..
+  probely-agent | Running...
   ```
 
-  > If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
-  > are properly configured.
+  If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
+  are properly configured.
 
 # Building from source
 
