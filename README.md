@@ -42,9 +42,8 @@ design principles. All traffic is end-to-end encrypted between agents.
 Even inside Probely's "internal" networks.
 * The Agent has been hardened in several ways, from choosing memory-safe languages
 (e.g. Go and Rust) to modern, recommended, cryptographic algorithms.
-* Probely has no administrative access to the Agent running on your infrastructure
 * The Agent does not listen on any public Internet port, reducing its attack
-surface. Instead, it creates an outbound connection to Probely’s network.
+surface.
 
 **Simplicity**
 
