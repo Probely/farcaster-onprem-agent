@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	handshakeTTL = time.Second * 600
+	handshakeTTL = time.Second * 180
 )
 
 func WireguardTunnel(name string) error {
