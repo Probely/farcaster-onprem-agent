@@ -29,6 +29,7 @@ set -x
 if [ ! -f "${SECRETS_DIR}/tunnel/wg-tunnel.conf" ] || [ ! -f "${SECRETS_DIR}/gateway/wg-gateway.conf" ]; then
 	echo "Could not find WireGuard configuration files!"
 	echo "Please make sure that the agent was correctly installed"
+	sleep 10
 	exit 1
 fi
 

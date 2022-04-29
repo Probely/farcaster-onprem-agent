@@ -50,7 +50,7 @@ RUN set -eux \
 
 
 FROM debian:bullseye-slim
-COPY ./bin/. /farcaster/bin/
+COPY ./scripts/. /farcaster/bin/
 COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
 COPY --from=go_builder /build/diag/diag /usr/local/bin/
 COPY --from=rust_builder /moproxy/target/release/moproxy /usr/local/bin
