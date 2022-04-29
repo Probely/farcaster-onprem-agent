@@ -17,6 +17,7 @@ build-local: check-env
 	docker buildx build --builder multiarch -f docker/Dockerfile \
 		--platform $(PLATFORMS) \
 		-t $(REPO):$(VERSION) \
+		--load \
 		.
 
 clean:

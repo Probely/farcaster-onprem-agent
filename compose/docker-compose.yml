@@ -2,13 +2,13 @@ version: '3.3'
 
 services:
   agent:
-    image: {{DOCKER_IMAGE}}
+    image: probely/farcaster-onprem-agent:v2
     container_name: probely-agent
     stop_grace_period: 1s
     environment:
     - HTTP_PROXY
     volumes:
-    - {{SECRETS_PATH}}:/secrets/farcaster/data:z,ro
+    - ./secrets:/secrets/farcaster/data:z,ro
     devices:
     - /dev/net/tun:/dev/net/tun
     tmpfs:
