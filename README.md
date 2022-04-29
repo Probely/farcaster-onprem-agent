@@ -186,7 +186,7 @@ from the Agent installer:
 
 This step is **not** required to run the Agent.
 
-Follow these instructions if you want to understand how the Agent and
+Follow these instructions if you want to understand how the Container and
 Installer are built.
 
 * Start by checking the code out from the repository:
