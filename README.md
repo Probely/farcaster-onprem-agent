@@ -177,7 +177,8 @@ from the Agent installer:
 
 # Building from source
 
-Note: this option is not officially supported, and may require setting additional options to work on some environments.
+Note: this step is not required to run the Agent. It's only if you want to
+understand how the Agent and Installer are built.
 
 * Start by checking the code out from the repository:
 
