@@ -176,7 +176,7 @@ from the Agent installer:
   ```
 
   If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
-  are properly configured.
+  is properly configured.
 
 # Building from source
 
