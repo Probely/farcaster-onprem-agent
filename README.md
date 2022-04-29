@@ -179,9 +179,7 @@ from the Agent installer:
   environment variable is set on the container.
   
   While the agent should be able to use a proxy to connect to Probely, this may result in poor
-  network performance.
-  
-  We **strongly** recommend that you enable the agent to connect to
+  network performance. We **strongly** recommend that you enable the agent to connect to
   `hub.farcaster.probely.com` on `UDP port 443` to ensure optimal network performance.
 
 # Building from source
