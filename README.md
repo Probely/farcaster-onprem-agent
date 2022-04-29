@@ -113,7 +113,7 @@ installer script tailored to your specific Agent.
 
 Both [Docker](https://docs.docker.com/engine/install/) and
 [Docker Compose](https://docs.docker.com/compose/install/) must be installed
-for these instructions to work. Please follow this procedure on a VM with those
+for these instructions to work. Please follow this procedure on a system with those
 requirements met.
 
 ## Kubernetes (optional)
