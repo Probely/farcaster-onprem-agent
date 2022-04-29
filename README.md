@@ -184,8 +184,10 @@ from the Agent installer:
 
 # Building from source
 
-Note: this step is not required to run the Agent. It's only if you want to
-understand how the Agent and Installer are built.
+This step is **not** required to run the Agent.
+
+Follow these instructions if you want to understand how the Agent and
+Installer are built.
 
 * Start by checking the code out from the repository:
 
