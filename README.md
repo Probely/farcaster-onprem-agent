@@ -151,18 +151,18 @@ from the Agent installer:
   ```bash
   cd ./agent
   ./setup.sh
-  docker-compose up
+  docker-compose up -d
   ```
 
 * Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
   ```bash
-  sudo docker logs -ti probely-agent
+  docker logs -ti probely-agent
   ```
+
   If everything is running correctly, you should see an output similar to:
-  ```bash
-  $ docker-compose up
+  ```
   Creating network "agent_default" with the default driver
   Creating probely-agent ... done
   Attaching to probely-agent
