@@ -189,7 +189,7 @@ understand how the Agent and Installer are built.
 **Unless otherwise specified, these instructions must be run on the repository
 root.**
 
-* Build the container:
+## Container
 
   ```bash
   VERSION=local make build-local
@@ -199,7 +199,7 @@ Remember to reference your custom-built Docker images on any `docker-compose.yml
 file, or Kubernetes pod/deployment descriptor you configure. If not specified,
 the default Probely docker Agent images are used.
 
-### Installer
+## Installer
 
 The installer build script expects a "config bundle" to exist. A config bundle
 is a set of configuration files and keys that allow the Agent to connect to
