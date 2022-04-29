@@ -137,6 +137,7 @@ Probely's support team.
   Launching test container...                                     [ok]
   ```
 
+## Launch the agent
 * Run the following commands to extract the Agent keys and configuration files
 from the Agent installer:
 
