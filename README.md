@@ -93,7 +93,7 @@ The same goes if the target login URL is served from a different internal web ap
 Typical values are 80 and 443.
 3. The IP addresses of these hosts are subject to change. We recommend allowing 
 web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent
-can use an HTTP proxy server to reach the web.
+will use an HTTP proxy if you set the `HTTP_PROXY` variable.
 4. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
 5. This server receives connections from potentially vulnerable systems on your infrastructure.
 It is used, for example, to detect "Log4Shell"-type vulnerabilities.
