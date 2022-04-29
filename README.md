@@ -113,8 +113,7 @@ installer script tailored to your specific Agent.
 
 Both [Docker](https://docs.docker.com/engine/install/) and
 [Docker Compose](https://docs.docker.com/compose/install/) must be installed
-for these instructions to work. Please follow this procedure on a system with those
-requirements met.
+for these instructions to work. Please make sure those requirements are met.
 
 ## Kubernetes (optional)
 We provide an example Agent Kubernetes deployment
@@ -179,7 +178,7 @@ from the Agent installer:
   
   While the agent should be able to use a proxy to connect to Probely, this may result in poor
   network performance. We **strongly** recommend that you allow the agent to connect to
-  `hub.farcaster.probely.com` on `UDP port 443` to ensure optimal network performance.
+  `hub.farcaster.probely.com` on `UDP port 443`.
 
 # Building from source
 
