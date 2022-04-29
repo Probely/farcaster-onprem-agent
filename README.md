@@ -163,13 +163,13 @@ from the Agent installer:
 
   If everything is running correctly, you should see an output similar to:
   ```
-  probely-agent | Starting local DNS resolver     ... done
-  probely-agent | Setting HTTP proxy rules        ... done
-  probely-agent | Connecting to Probely           ... done
-  probely-agent | Setting local gateway rules     ... done
-  probely-agent | Starting WireGuard gateway      ... done
-  probely-agent |
-  probely-agent | Running...
+  Starting local DNS resolver     ... done
+  Setting HTTP proxy rules        ... done
+  Connecting to Probely           ... done
+  Setting local gateway rules     ... done
+  Starting WireGuard gateway      ... done
+  
+  Running...
   ```
 
   If the Agent is not connecting, please ensure that your [firewall](#firewall-rules)
