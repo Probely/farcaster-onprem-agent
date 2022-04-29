@@ -58,11 +58,11 @@ such as public IP addresses, complex firewall rules are unnecessary or minimized
 
 The Agent is a simple Docker container requiring little resources.
 
-The following table contains the recommended minimum system resources.
+The following table contains the required minimum system resources.
 
 | CPU     | RAM     | Storage     |
 | ------- | ------- | ----------- |
-| 1       | 1 GB    | 5 GB        |
+| 1       | 512 MB  | 1 GB        |
 
 # Network Requirements
 
