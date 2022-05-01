@@ -18,20 +18,13 @@ and Probely's infrastructure.
 
 Installing third-party software on your network requires some degree of trust.
 Being security professionals ourselves, we are very aware of this, and designed
-Probely with a security mindset.
-
-We designed the Agent following a set of principles that we believe will meet
-your security expectations.
+Probely following a set of security principles.
 
 **Transparency**
 
-* No black boxes: all code is open source, with a permissive license.
-* In addition to the source code, the instructions and tools to build the Agent
-are provided.
-With them, you can ensure that the Agent running on your infrastructure has not
+* No black boxes: code and build instructions are open source, with a permissive license.
+* You have complete control over the Agent, and can ensure that it has not
 been tampered with.
-* You have complete control over the Agent, and can change any of its components
-however you see fit.
 
 **Least privilege**
 
@@ -40,25 +33,25 @@ however you see fit.
 [Zero Trust Networks](https://www.oreilly.com/library/view/zero-trust-networks/9781491962183/)
 design principles. All traffic is end-to-end encrypted between agents.
 Even inside Probely's "internal" networks.
-* The Agent has been hardened in several ways, from choosing memory-safe languages
+* The Agent has been hardened in several ways, from using memory-safe languages
 (e.g. Go and Rust) to modern, recommended, cryptographic algorithms.
 * The Agent does not listen on any public Internet port, reducing its attack
 surface.
 
 **Simplicity**
 
-* We are firm believers that simplicity enables security.
+* We believe simplicity enables security.
 The Agent follows simple design decisions, and uses modern open-source standard
 components, such as [WireGuard](https://www.wireguard.com/).
 * The Agent has minimal network requirements. Typical network requirements,
 such as public IP addresses, complex firewall rules are unnecessary or minimized.
-* The Agent needs minimal hardware resources and is designed to scale easily.
+* The Agent uses few hardware resources and is designed to scale easily.
 
 # System Resources
 
 The Agent is a simple Docker container requiring little resources.
 
-The following table contains the required minimum system resources.
+The following table describes the minimum system resources.
 
 | CPU     | RAM     | Storage     |
 | ------- | ------- | ----------- |
@@ -66,7 +59,7 @@ The following table contains the required minimum system resources.
 
 # Network Requirements
 
-In the following table, we describe the required firewall rules.
+In the following table, we detail the required firewall rules.
 
 We expect a NAT gateway (or an HTTP proxy) to exist on the network
 for the Agent to reach Probely's servers.
@@ -99,7 +92,7 @@ It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 # Installation
 
-The agent is a simple Docker container. It should run on any system with a working Docker installation.
+The agent runs on a Docker container. It should work on any system with a functional Docker installation.
 
 You should have a `probely-onprem-agent-<id>.run` file, which is an
 installer script tailored to your specific Agent.
