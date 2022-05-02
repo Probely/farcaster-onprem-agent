@@ -259,6 +259,7 @@ set_proxy_redirect_rules() {
 }
 
 function set_gw_filter_and_nat_rules() {
+	# Filter
 	iptables -N FARCASTER-FILTER
 	iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 	iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
@@ -268,22 +269,21 @@ function set_gw_filter_and_nat_rules() {
 		--ctstate ESTABLISHED,RELATED -j ACCEPT
 	iptables -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
 
-	iptables -F INPUT
 	iptables -P INPUT DROP
 	iptables -A INPUT -j FARCASTER-FILTER
 	iptables -A INPUT -i lo -j ACCEPT
 	iptables -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
 
-	iptables -F FORWARD
 	iptables -P FORWARD DROP
 	iptables -A FORWARD -j FARCASTER-FILTER
 	iptables -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
 
+	# NAT
 	iptables -t nat -N FARCASTER-NAT
 	iptables -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
 	iptables -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
 	iptables -t nat -A FARCASTER-NAT -j MASQUERADE
-	iptables -t nat -F POSTROUTING
+
 	iptables -t nat -A POSTROUTING -j FARCASTER-NAT
 }
 
