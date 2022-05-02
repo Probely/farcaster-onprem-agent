@@ -49,7 +49,7 @@ such as public IP addresses, complex firewall rules are unnecessary or minimized
 
 # System Resources
 
-The Agent is a simple Docker container requiring little resources.
+The Agent is a basic Docker container requiring little resources.
 
 The following table describes the minimum system resources.
 
@@ -94,13 +94,10 @@ It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 The agent runs on a Docker container. It should work on any system with a functional Docker installation.
 
-You should have a `probely-onprem-agent-<id>.run` file, which is an
-installer script tailored to your specific Agent.
+You should have a `probely-onprem-agent-<id>.tgz` file, which contains the agent configurations.
 
-> If you do not have an installer, you can create one in the
+> If you do not have an agent config file, you can create one in the
 > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
-> If you want to know how the installer is built and what it does, please refer
-> to the [Installer](#installer) section.
 
 ## Required software
 
@@ -129,19 +126,16 @@ Probely's support team.
   ```
 
 ## Launch the agent
-* Run the following commands to extract the Agent keys and configuration files
-from the Agent installer:
+* Extract the Agent configuration files:
 
   ```bash
-  chmod +x ./probely-onprem-agent-<id>.run
-  ./probely-onprem-agent-<id>.run --noexec --target ./agent
+  tar -pzxvf probely-onprem-agent-<id>.tgz
   ```
 
 * Start the Agent:
 
   ```bash
   cd ./agent
-  ./setup.sh
   docker-compose up -d
   ```
 
@@ -171,14 +165,13 @@ from the Agent installer:
   
   While the agent should be able to use a proxy to connect to Probely, this may result in poor
   network performance. We **strongly** recommend that you allow the agent to connect to
-  `hub.farcaster.probely.com` on `UDP port 443`.
+  `hub.farcaster.probely.com` on `UDP` port `443`.
 
 # Building from source
 
 This step is **not** required to run the Agent.
 
-Follow these instructions if you want to understand how the Container and
-Installer are built.
+Follow these instructions if you want to understand how the Container is built.
 
 * Start by checking the code out from the repository:
 
@@ -198,36 +191,3 @@ root.**
 Remember to reference your custom-built Docker images on any `docker-compose.yml`
 file, or Kubernetes pod/deployment descriptor you configure. If not specified,
 the default Probely docker Agent images are used.
-
-## Installer
-
-The installer build script expects a "config bundle" to exist. A config bundle
-is a set of configuration files and keys that allow the Agent to connect to
-Probely.
-
-You should have a `probely-onprem-agent-<id>.run` file, which is an
-installer script tailored to your specific Agent.
-
-If you do not have an installer, you can create one in the
-[Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
-
-* First, extract the Agent configuration bundle from the original installer:
-  ```bash
-  chmod +x ./probely-onprem-agent-<id>.run
-  ./probely-onprem-agent-<id>.run --noexec --target ./tmp/agent-installer
-  ```
-
-* Re-create the config bundle:
-
-  ```bash
-  tar -zcpvf ./tmp/<id>.tar.gz -C ./tmp/agent-installer/secrets .
-  ```
-
-* Create the new installer:
-
-  ```bash
-  ./installer/make-installer.sh ./tmp/<id>.tar.gz
-  ```
-
-The new installer will be placed in `installer/target/probely-onprem-agent-<id>.run`.
-
