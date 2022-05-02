@@ -94,7 +94,7 @@ It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 The agent runs on a Docker container. It should work on any system with a functional Docker installation.
 
-You should have a `probely-onprem-agent-<id>.tgz` file, which contains the agent configurations.
+You should have a `probely-onprem-agent-<id>.run` file, which contains the agent configurations.
 
 > If you do not have an agent config file, you can create one in the
 > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
@@ -129,7 +129,7 @@ Probely's support team.
 * Extract the Agent configuration files:
 
   ```bash
-  tar -pzxvf probely-onprem-agent-<id>.tgz
+  ./probely-onprem-agent-<id>.run --noexec --target ./agent
   ```
 
 * Start the Agent:
