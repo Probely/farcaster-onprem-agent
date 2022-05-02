@@ -75,7 +75,7 @@ echo "done"
 
 RC=1
 CONNECTED_UDP=0
-echo -ne "Connecting to Probely\t\t... "
+echo -ne "Connecting to Probely (via UDP)\t... "
 if wg_start "${WG_TUN_IF}"; then
 	if [ "$(wg_get_latest_handshake ${WG_TUN_IF})" != "0" ]; then
 		CONNECTED_UDP=1
@@ -99,7 +99,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 	fi
 	echo "done"
 
-	echo -ne "Connecting to Probely (retry)\t... "
+	echo -ne "Connecting to Probely (via TCP)\t... "
 	wg_stop "${WG_TUN_IF}"
 	wg_update_endpoint "${WG_TUN_IF}" "127.0.0.1:${UDP2TCP_PORT}"
 	wg_start "${WG_TUN_IF}"
