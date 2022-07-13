@@ -83,9 +83,6 @@ RUN set -eux \
     && useradd --system --home-dir / --shell /bin/false tcptun \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
-    # Cleanup
-    && apt-get clean \
-    && rm -rf /var/lib/apt \
     # Make sure that binaries were properly built
     && /usr/local/bin/moproxy --help >/dev/null 2>&1 \
     && /usr/local/bin/udp2tcp --help >/dev/null 2>&1 \
