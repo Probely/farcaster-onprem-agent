@@ -27,10 +27,7 @@ type ConfigFile struct {
 }
 
 var configClient = &http.Client{
-	Timeout: time.Second * 20,
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
+	Timeout: time.Second * 10,
 }
 
 // Fetch the encrypted configuration for the agent

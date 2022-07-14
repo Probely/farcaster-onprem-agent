@@ -252,7 +252,7 @@ set_proxy_redirect_rules() {
 
 	# Local TCP traffic from specific services go through the proxy
 	iptables -t nat -I OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
-	iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
+	# iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
 	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
