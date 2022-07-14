@@ -30,7 +30,7 @@ RUN set -eux \
 
 
 FROM --platform=$BUILDPLATFORM golang:1.18 as go_builder
-COPY ./diag /build/diag
+COPY ./farcaster /build/farcaster
 ARG wg_go_tag=0.0.20220316
 ARG TARGETARCH
 RUN set -eux \
@@ -44,7 +44,7 @@ RUN set -eux \
     && env GOOS=linux GOARCH=$TARGETARCH make \
     && env GOOS=linux GOARCH=$TARGETARCH make install \
     && cd - \
-    && cd diag \
+    && cd farcaster \
     && env GOOS=linux GOARCH=$TARGETARCH make \
     && cd -
 
@@ -52,7 +52,7 @@ RUN set -eux \
 FROM debian:bullseye-slim
 COPY ./scripts/. /farcaster/bin/
 COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
-COPY --from=go_builder /build/diag/diag /usr/local/bin/
+COPY --from=go_builder /build/farcaster/farcaster /usr/local/bin
 COPY --from=rust_builder /moproxy/target/release/moproxy /usr/local/bin
 COPY --from=rust_builder /udp-over-tcp/target/release/udp2tcp /usr/local/bin
 RUN set -eux \
@@ -81,6 +81,7 @@ RUN set -eux \
     && { useradd --system --home-dir / --shell /bin/false proxy || true; } \
     && useradd --system --home-dir / --shell /bin/false diag \
     && useradd --system --home-dir / --shell /bin/false tcptun \
+    && ln /usr/local/bin/farcaster /usr/local/bin/diag \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
     # Cleanup
@@ -89,7 +90,7 @@ RUN set -eux \
     # Make sure that binaries were properly built
     && /usr/local/bin/moproxy --help >/dev/null 2>&1 \
     && /usr/local/bin/udp2tcp --help >/dev/null 2>&1 \
-    && /usr/local/bin/diag >/dev/null 2>&1 \
+    && /usr/local/bin/farcaster >/dev/null 2>&1 \
     && /usr/bin/wireguard-go >/dev/null 2>&1
 
 ENTRYPOINT ["/farcaster/bin/run.sh"]
