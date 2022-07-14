@@ -1,4 +1,4 @@
-package actions
+package services
 
 import (
 	"archive/tar"
@@ -21,7 +21,7 @@ import (
 
 const apiURL = "https://api.stg.probely.com"
 
-type configFile struct {
+type ConfigFile struct {
 	Data   string
 	Secret string
 }
@@ -70,32 +70,31 @@ func FetchConfig(token string) ([]byte, error) {
 	return data, nil
 }
 
-// Decrypt agent configuration encrypted secret, such as private keys
-// Encrypted secret and token are base58-encoded
+// Decrypt configuration secrets, such as private keys
+// Both secret and token must be base58-encoded
 func decryptSecret(secret string, token string) (string, error) {
 	var data []byte
 	var err error
 
-	// Decode the base58-encoded encrypted data
+	// Decode the base58-encoded secret
 	if data, err = base58.Decode(secret); err != nil {
 		return "", err
 	}
-
-	// The encrypted data should be at least 24 bytes, as that is the IV
+	// The encrypted secret should be at least 24 bytes, as that is the IV
 	// size used by nacl SecretBox
 	if len(data) < 24 {
 		return "", fmt.Errorf("encrypted secret should be at least 24 bytes long")
 	}
 
-	// Decode token to be used as decryption key
-	var tokenb []byte
-	if tokenb, err = base58.Decode(token); err != nil {
+	// Decode the token to use as the secret decryption key
+	var dt []byte
+	if dt, err = base58.Decode(token); err != nil {
 		return "", err
 	}
 	var key [32]byte
-	copy(key[:], tokenb)
+	copy(key[:], dt)
 
-	// Extract nonce from encrypted data
+	// Extract the nonce from encrypted data
 	var nonce [24]byte
 	copy(nonce[:], data[:24])
 
@@ -108,9 +107,17 @@ func decryptSecret(secret string, token string) (string, error) {
 	return string(data), nil
 }
 
-// From an agent configuratoin archive (tar.gz), decrypt secret keys and build
-// final configuration files. Returns a map with path, content pairs
-func CreateConfig(data []byte, token string) (map[string][]byte, error) {
+// Takes a map of path: ConfigFile and replaces secret placeholders by actual
+// decrypted secrets
+func fillSecrets(files map[string]*ConfigFile) {
+	for _, file := range files {
+		file.Data = strings.ReplaceAll(file.Data, "{{private_key}}", file.Secret)
+	}
+}
+
+// From an agent configuration archive (tar.gz), decrypt secrets and build
+// the configuration files
+func BuildConfig(data []byte, token string) (map[string]*ConfigFile, error) {
 	var err error
 
 	// Extract configuration files and keys
@@ -120,7 +127,7 @@ func CreateConfig(data []byte, token string) (map[string][]byte, error) {
 	}
 	defer gz.Close()
 
-	files := map[string]configFile{
+	files := map[string]*ConfigFile{
 		"wg-gateway.conf": {},
 		"wg-tunnel.conf":  {},
 	}
@@ -134,40 +141,55 @@ func CreateConfig(data []byte, token string) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		var f configFile
+		var c *ConfigFile
 		var ok bool
 		if strings.HasSuffix(hdr.Name, ".conf") { // Config files
-			cfg := path.Base(hdr.Name)
-			if f, ok = files[cfg]; !ok {
-				fmt.Fprintf(os.Stderr, "Unknown config file: %s\n", cfg)
+			cname := path.Base(hdr.Name)
+			if c, ok = files[cname]; !ok {
+				fmt.Fprintf(os.Stderr, "Unknown config file: %s\n", cname)
 				continue
 			}
 			data, _ := io.ReadAll(tr)
-			f.Data = string(data)
+			c.Data = string(data)
 
 		} else if strings.HasSuffix(hdr.Name, ".key") { // Secrets
-			name := path.Base(hdr.Name)
-			cfg := fmt.Sprintf("wg-%s.conf", strings.TrimSuffix(name, ".key"))
-			if f, ok = files[cfg]; !ok {
-				fmt.Fprintf(os.Stderr, "Unknown config file: %s\n", cfg)
+			sname := path.Base(hdr.Name)
+			cname := fmt.Sprintf("wg-%s.conf", strings.TrimSuffix(sname, ".key"))
+			if c, ok = files[cname]; !ok {
+				fmt.Fprintf(os.Stderr, "Unknown config file: %s\n", cname)
 				continue
 			}
 			// Read secret contents
 			secret, _ := io.ReadAll(tr)
-			f.Secret = string(secret)
+			c.Secret = string(secret)
 			// Expected secret format: name = secret
-			parts := strings.Split(f.Secret, " = ")[1]
+			parts := strings.Split(c.Secret, " = ")
 			if len(parts) != 2 {
-				return nil, fmt.Errorf("found invalid secret: %s", name)
+				return nil, fmt.Errorf("found invalid secret: %s", sname)
 			}
+			c.Secret = parts[1]
 			// Decrypt the secret
-			if f.Secret, err = decryptSecret(f.Secret, token); err != nil {
+			if c.Secret, err = decryptSecret(c.Secret, token); err != nil {
 				return nil, err
 			}
-			fmt.Println("Decrypted secret:", f.Secret)
 		}
 	}
-	// Build configuration files
 
-	return nil, nil
+	fillSecrets(files)
+
+	return files, nil
+}
+
+// Writes configuration files to dest
+func WriteConfig(files map[string]*ConfigFile, dest string) error {
+	if err := os.MkdirAll(dest, 0700); err != nil {
+		return err
+	}
+	for name, file := range files {
+		fpath := path.Join(dest, name)
+		if err := os.WriteFile(fpath, []byte(file.Data), 0600); err != nil {
+			return err
+		}
+	}
+	return nil
 }

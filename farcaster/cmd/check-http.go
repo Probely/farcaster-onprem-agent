@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/probely/farcaster-onprem-agent/farcaster/actions"
 	"github.com/probely/farcaster-onprem-agent/farcaster/format"
+	"github.com/probely/farcaster-onprem-agent/farcaster/services"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ var checkHTTPCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 }
 
-func resultToString(res *actions.HTTPResult) string {
+func resultToString(res *services.HTTPResult) string {
 	if res == nil {
 		return "[empty]"
 	}
@@ -43,14 +43,14 @@ func ensureURLSchemeExists(u string) (string, error) {
 
 func checkHTTP(cmd *cobra.Command, args []string) {
 	var err error
-	var res *actions.HTTPResult
+	var res *services.HTTPResult
 	for _, u := range args {
 		format.PrintPadf("Checking if %s is reachable ... ", u)
 		if u, err = ensureURLSchemeExists(u); err != nil {
 			format.PrintErr(err)
 			return
 		}
-		res, err = actions.CheckHTTPEndpoint(u)
+		res, err = services.CheckHTTPEndpoint(u)
 		format.PrintErr(err)
 		if err != nil {
 			if verbose {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/probely/farcaster-onprem-agent/farcaster/actions"
 	"github.com/probely/farcaster-onprem-agent/farcaster/format"
+	"github.com/probely/farcaster-onprem-agent/farcaster/services"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +34,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	errCnt := 0
 
 	format.PrintPadf("Checking if WireGuard tunnel is up")
-	err = actions.CheckWireguardTunnel(wireguardDeviceName)
+	err = services.CheckWireguardTunnel(wireguardDeviceName)
 	if err != nil {
 		errCnt++
 	}
@@ -46,7 +46,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 
 	for _, url := range farcasterHTTPEndpoints {
 		format.PrintPadf("Checking if %s is reachable", url)
-		_, err = actions.CheckHTTPEndpoint(url)
+		_, err = services.CheckHTTPEndpoint(url)
 		if err != nil {
 			errCnt++
 		}
@@ -56,7 +56,7 @@ func checkNetwork(cmd *cobra.Command, args []string) {
 	prevErrCnt := errCnt
 	for _, url := range externalHTPEndpoints {
 		format.PrintPadf("Checking if %s is reachable", url)
-		_, err = actions.CheckHTTPEndpoint(url)
+		_, err = services.CheckHTTPEndpoint(url)
 		if err != nil {
 			errCnt++
 		}
