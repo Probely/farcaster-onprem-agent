@@ -17,7 +17,7 @@ func init() {
 }
 
 var checkHTTPCmd = &cobra.Command{
-	Use:   "check-http <url>",
+	Use:   "check-http URL",
 	Short: "checks if the given URL is reachable",
 	Run:   checkHTTP,
 	Args:  cobra.MinimumNArgs(1),

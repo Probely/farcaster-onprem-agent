@@ -14,15 +14,20 @@ func init() {
 }
 
 var configAgentCmd = &cobra.Command{
-	Use:   "config-agent",
+	Use:   "config-agent DESTINATION",
 	Short: "fetch configuration and setup the agent",
 	Run:   configAgent,
+	Args:  cobra.ExactArgs(1),
 }
 
 func configAgent(cmd *cobra.Command, args []string) {
+	dest := args[0]
+	fmt.Fprintf(os.Stderr, "Fetching agent config from %s to %s...\n",
+		services.APIURL(), dest)
+
 	token := os.Getenv("FARCASTER_AGENT_TOKEN")
 	if len(token) == 0 {
-		fmt.Fprint(os.Stderr, "Please set the FARCASTER_AGENT_TOKEN env variable")
+		fmt.Fprint(os.Stderr, "Please set the FARCASTER_AGENT_TOKEN env variable\n")
 		os.Exit(1)
 	}
 
@@ -41,7 +46,6 @@ func configAgent(cmd *cobra.Command, args []string) {
 	}
 
 	// Write secrets to the filesystem
-	dest := "./tmp"
 	if err = services.WriteConfig(files, dest); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing agent config files to %s: %s\n",
 			dest, err)

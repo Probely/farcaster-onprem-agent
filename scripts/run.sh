@@ -11,7 +11,8 @@ export PATH="${FARCASTER_PATH}"/sbin:"${FARCASTER_PATH}"/bin:${PATH}
 LOG_FILE="/run/log/farcaster.log"
 WG_TUN_IF="wg-tunnel"
 WG_GW_IF="wg-gateway"
-SECRETS_DIR="/secrets/farcaster/data"
+SECRETS_DIR_V2="/secrets/farcaster/data_v2"
+SECRETS_DIR_V0="/secrets/farcaster/data"
 WORK_DIR="/run/farcaster"
 TCP_PROXY_PORT=8080
 UDP2TCP_PORT=8443
@@ -26,19 +27,49 @@ mkdir -pm 0700 $(dirname ${LOG_FILE})
 exec 2>>${LOG_FILE}
 set -x
 
-if [ ! -f "${SECRETS_DIR}/tunnel/wg-tunnel.conf" ] || [ ! -f "${SECRETS_DIR}/gateway/wg-gateway.conf" ]; then
-	echo "Could not find WireGuard configuration files!"
-	echo "Please make sure that the agent was correctly installed"
-	sleep 10
+if ! mkdir -pm 0700 ${WORK_DIR}; then
+	echo "Could not create the work directory!"
+	print_log {$LOG_FILE}
+	sleep 60
 	exit 1
 fi
 
-mkdir -p ${WORK_DIR}
-chmod -R 0700 ${WORK_DIR}
-cp "${SECRETS_DIR}/tunnel/wg-tunnel.conf" "${SECRETS_DIR}/gateway/wg-gateway.conf" ${WORK_DIR}/
+# Legacy config files
+if [ -f "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ]; then
+	cp "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ${WORK_DIR}/
+
+# New (but previously built) config files
+elif [ -f "${SECRETS_DIR_V2}/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V2}/wg-gateway.conf" ]; then
+	cp ${SECRETS_DIR_V2}/* ${WORK_DIR}/
+
+# No config files found. Try to fetch and build them using an agent token
+elif [ "${FARCASTER_AGENT_TOKEN:-x}" != "x" ]; then
+	echo -ne "Downloading agent configuration\t... "
+	if ! farcaster config-agent "${SECRETS_DIR_V2}/"; then
+		echo "failed"
+		echo "Could not configure the agent"
+		print_log ${LOG_FILE}
+		exit 1
+	fi
+	echo "done"
+	echo -ne "Deploying agent configuration\t... "
+	if ! cp ${SECRETS_DIR_V2}/* "${WORK_DIR}"; then
+		echo "failed"
+		echo "Could not deploy config to ${WORK_DIR}"
+		print_log ${LOG_FILE}
+		exit 1
+	fi
+	echo "done"
+
+else
+	echo "Cannot fetch the agent configuration files!"
+	echo "Please set the FARCASTER_AGENT_TOKEN environment variable"
+	sleep 60
+	exit 1
+fi
+
 
 HUB_HOST="$(wg_get_endpoint ${WG_TUN_IF})"
-
 
 function proxy_warning() {
 	if [ "${HTTP_PROXY}" = "" ]; then
@@ -87,7 +118,7 @@ fi
 
 UDP2TCP_PID=0
 if [ "${CONNECTED_UDP}" = "0" ]; then
-	echo -ne "Trying fallback TCP tunnel\t... "
+	echo -ne "Configuring fallback TCP tunnel\t... "
 	UDP2TCP_PID=$(start_udp_over_tcp_tunnel ${UDP2TCP_PORT} ${HUB_HOST} 443)
 	if [ "${UDP2TCP_PID}" == "-1" ]; then
 		echo "failed"

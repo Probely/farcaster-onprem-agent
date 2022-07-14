@@ -68,6 +68,7 @@ RUN set -eux \
        dnsutils \
        curl \
        wireguard-tools \
+       ca-certificates \
     && apt-get clean \
     && update-alternatives --set iptables /usr/sbin/iptables-legacy \
     && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
@@ -76,7 +77,7 @@ RUN set -eux \
     && ln -s /run/farcaster/wg-gateway.conf /farcaster/etc/ \
     && rm -rf /var/run \
     && ln -s /run /var/run \
-    && mkdir -p /secrets/farcaster/data \
+    && mkdir -m 0700 -p /secrets/farcaster/data \
     && chmod +x /farcaster/bin/* \
     && { useradd --system --home-dir / --shell /bin/false proxy || true; } \
     && useradd --system --home-dir / --shell /bin/false diag \

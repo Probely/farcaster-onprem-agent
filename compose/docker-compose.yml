@@ -6,9 +6,12 @@ services:
     container_name: probely-agent
     stop_grace_period: 1s
     environment:
+    - FARCASTER_AGENT_TOKEN
+    - FARCASTER_API_URL
     - HTTP_PROXY
     volumes:
     - ./secrets:/secrets/farcaster/data:z,ro
+    - secrets:/secrets/farcaster/data_v2
     devices:
     - /dev/net/tun:/dev/net/tun
     tmpfs:
@@ -16,3 +19,6 @@ services:
     cap_add:
     - NET_ADMIN
     restart: unless-stopped
+
+volumes:
+  secrets:
