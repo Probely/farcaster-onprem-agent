@@ -1,6 +1,6 @@
 # Overview
 
-This document will guide you through the installation of the Farcaster Agent on your network.
+This document will guide you through the installation of the Farcaster Agent.
 
 The Farcaster Agent connects Probely to your on-premises network, using an encrypted WireGuard
 tunnel, allowing Probely to scan your internal applications.
@@ -49,7 +49,7 @@ such as public IP addresses, complex firewall rules are unnecessary or minimized
 
 # System Resources
 
-The Agent is a basic Docker container requiring little resources.
+The Agent is a Docker container requiring very few resources.
 
 The following table describes the minimum system resources.
 
@@ -92,11 +92,11 @@ It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 # Installation
 
-The agent runs on a Docker container. It should work on any system with a functional Docker installation.
+The agent runs on a Docker container. It should work on any system with a Docker installation.
 
-You should have a `probely-onprem-agent-<id>.run` file, which contains the agent configurations.
+The agent needs an API token to connect to Probely's network.
 
-> If you do not have an agent config file, you can create one in the
+> If you do not have an agent token, you can create one in the
 > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
 
 ## Required software
@@ -114,7 +114,7 @@ Probely's support team.
 ## System checks
 * Before installing the agent container, check that your host can run it:
   ```bash
-  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/master/diag/host-check.sh
+  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/master/farcaster/host-check.sh
   chmod +x host-check.sh
   ./host-check.sh
   ```
@@ -126,16 +126,13 @@ Probely's support team.
   ```
 
 ## Launch the agent
-* Extract the Agent configuration files:
-
-  ```bash
-  ./probely-onprem-agent-<id>.run --noexec --target ./agent
-  ```
+* Download the agent [docker-compose.yml](url) manifest.
+* Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable.
+  For example, if your agent token is `abcdef`, then `FARCASTER_AGENT_TOKEN=abcdef`
 
 * Start the Agent:
 
   ```bash
-  cd ./agent
   docker-compose up -d
   ```
 
@@ -148,9 +145,11 @@ Probely's support team.
 
   If everything is running correctly, you should see output similar to:
   ```
+  Downloading agent configuration ... done
+  Deploying agent configuration   ... done
   Starting local DNS resolver     ... done
   Setting HTTP proxy rules        ... done
-  Connecting to Probely           ... done
+  Connecting to Probely (via UDP) ... done
   Setting local gateway rules     ... done
   Starting WireGuard gateway      ... done
   
@@ -161,7 +160,7 @@ Probely's support team.
   is properly configured.
   
   Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY`
-  environment variable is set on the container.
+  environment variable is set on the `docker-compose.yml` file.
   
   While the agent should be able to use a proxy to connect to Probely, this may result in poor
   network performance. We **strongly** recommend that you allow the agent to connect to
@@ -188,6 +187,6 @@ root.**
   VERSION=local make build-local
   ```
 
-Remember to reference your custom-built Docker images on any `docker-compose.yml`
-file, or Kubernetes pod/deployment descriptor you configure. If not specified,
+Remember to reference your custom-built Docker images on the `docker-compose.yml`
+file, or Kubernetes pod/deployment manifest you configure. If not specified,
 the default Probely docker Agent images are used.

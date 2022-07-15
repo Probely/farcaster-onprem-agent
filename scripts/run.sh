@@ -168,8 +168,8 @@ echo "done"
 if [ "${CONNECTED_UDP}" = "0" ]; then
 	echo
 	echo "WARNING: connected to Probely in fallback mode!"
-	echo "We will be able to scan, but performance may be lower, "
-	echo "causing scans to take longer, or even fail with timeout."
+	echo -n "Performance may suffer, resulting in delays, or even "
+	echo "failed scans."
 	echo
 
 	echo "Please make sure the agent can reach hub.farcaster.probely.com on UDP port 443."
