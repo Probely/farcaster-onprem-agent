@@ -5,8 +5,8 @@ This document will guide you through the installation of the Farcaster Agent.
 The Farcaster Agent connects Probely to your on-premises network, using an encrypted WireGuard
 tunnel, allowing Probely to scan your internal applications.
 
-The Agent is open-source, and the code is freely available
-[here](https://github.com/probely/farcaster-onprem-agent).
+The Agent is open-source, and the code is freely available in the official
+[repository](https://github.com/probely/farcaster-onprem-agent).
 
 The following diagram shows an example network topology depicting an on-premises
 network, the Agent, the Agent Hub (where on-premises Agents connect to),
@@ -126,7 +126,7 @@ Probely's support team.
   ```
 
 ## Launch the agent
-* Download the agent [docker-compose.yml](url) manifest.
+* Download the agent [docker-compose.yml](compose/docker-compose.yml) manifest.
 * Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable.
   For example, if your agent token is `abcdef`, then `FARCASTER_AGENT_TOKEN=abcdef`
 
