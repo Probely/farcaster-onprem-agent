@@ -17,9 +17,7 @@ and Probely's infrastructure.
 
 # System Resources
 
-The Agent is a Docker container requiring very few resources.
-
-The following table describes the minimum system resources.
+The Agent is a Docker container requiring very few resources, as detailed in the following table.
 
 | CPU     | RAM     | Storage     |
 | ------- | ------- | ----------- |
@@ -73,7 +71,7 @@ Both [Docker](https://docs.docker.com/engine/install/) and
 [Docker Compose](https://docs.docker.com/compose/install/) must be installed
 for these instructions to work. Please make sure those requirements are met.
 
-## Kubernetes (optional)
+### Kubernetes (optional)
 We provide an example Agent Kubernetes deployment
 [here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
 If you need help setting the Agent up on a Kubernetes cluster, please contact
