@@ -107,14 +107,14 @@ for these instructions to work. Please make sure those requirements are met.
 
 ## Kubernetes (optional)
 We provide an example Agent Kubernetes deployment
-[here](https://github.com/probely/farcaster-onprem-agent/tree/master/contrib/kubernetes/).
+[here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
 If you need help setting the Agent up on a Kubernetes cluster, please contact
 Probely's support team.
 
 ## System checks
 * Before installing the agent container, check that your host can run it:
   ```bash
-  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/master/farcaster/host-check.sh
+  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farcaster/host-check.sh
   chmod +x host-check.sh
   ./host-check.sh
   ```
