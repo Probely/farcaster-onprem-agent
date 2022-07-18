@@ -14,38 +14,6 @@ and Probely's infrastructure.
 
 ![Farcaster high-level network architecture](https://probely.com/assets/media/img_farcaster.png)
 
-# Security considerations
-
-Installing third-party software on your network requires some degree of trust.
-Being security professionals ourselves, we are very aware of this, and designed
-Probely following a set of security principles.
-
-**Transparency**
-
-* No black boxes: code and build instructions are open source, with a permissive license.
-* You have complete control over the Agent, and can ensure that it has not
-been tampered with.
-
-**Least privilege**
-
-* Services are containerized and run with least privileges.
-* The Agent is built around
-[Zero Trust Networks](https://www.oreilly.com/library/view/zero-trust-networks/9781491962183/)
-design principles. All traffic is end-to-end encrypted between agents.
-Even inside Probely's "internal" networks.
-* The Agent has been hardened in several ways, from using memory-safe languages
-(e.g. Go and Rust) to modern, recommended, cryptographic algorithms.
-* The Agent does not listen on any public Internet port, reducing its attack
-surface.
-
-**Simplicity**
-
-* We believe simplicity enables security.
-The Agent follows simple design decisions, and uses modern open-source standard
-components, such as [WireGuard](https://www.wireguard.com/).
-* The Agent has minimal network requirements. Typical network requirements,
-such as public IP addresses, complex firewall rules are unnecessary or minimized.
-* The Agent uses few hardware resources and is designed to scale easily.
 
 # System Resources
 
@@ -113,14 +81,14 @@ Probely's support team.
 
 ## System checks
 * Before installing the agent container, check that your host can run it:
-  ```bash
+  ```shell
   curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farcaster/host-check.sh
   chmod +x host-check.sh
   ./host-check.sh
   ```
 
   Verify that the checks succeeded:
-  ```bash
+  ```shell
   Checking if Docker is installed...                              [ok]
   Launching test container...                                     [ok]
   ```
@@ -132,14 +100,14 @@ Probely's support team.
 
 * Start the Agent:
 
-  ```bash
+  ```shell
   docker-compose up -d
   ```
 
 * Check that the Agent connected successfully
 
   After starting the Agent, it should link-up with Probely. Run the following command:
-  ```bash
+  ```shell
   docker logs probely-agent
   ```
 
@@ -172,21 +140,52 @@ This step is **not** required to run the Agent.
 
 Follow these instructions if you want to understand how the Container is built.
 
-* Start by checking the code out from the repository:
+Check out the code from the repository:
 
-  ```bash
-  git clone git@github.com:Probely/farcaster-onprem-agent.git
-  ```
+```shell
+git clone git@github.com:Probely/farcaster-onprem-agent.git
+```
 
 **Unless otherwise specified, these instructions must be run on the repository
 root.**
 
-## Container
-
-  ```bash
-  VERSION=local make build-local
-  ```
+```shell
+VERSION=local make build-local
+```
 
 Remember to reference your custom-built Docker images on the `docker-compose.yml`
 file, or Kubernetes pod/deployment manifest you configure. If not specified,
 the default Probely docker Agent images are used.
+
+# Security considerations
+
+Installing third-party software on your network requires some degree of trust.
+Being security professionals ourselves, we are very aware of this, and designed
+Probely following a set of security principles.
+
+**Transparency**
+
+* No black boxes: code and build instructions are open source, with a permissive license.
+* You have complete control over the Agent, and can ensure that it has not
+been tampered with.
+
+**Least privilege**
+
+* Services are containerized and run with least privileges.
+* The Agent is built around
+[Zero Trust Networks](https://www.oreilly.com/library/view/zero-trust-networks/9781491962183/)
+design principles. All traffic is end-to-end encrypted between agents.
+Even inside Probely's "internal" networks.
+* The Agent has been hardened in several ways, from using memory-safe languages
+(e.g. Go and Rust) to modern, recommended, cryptographic algorithms.
+* The Agent does not listen on any public Internet port, reducing its attack
+surface.
+
+**Simplicity**
+
+* We believe simplicity enables security.
+The Agent follows simple design decisions, and uses modern open-source standard
+components, such as [WireGuard](https://www.wireguard.com/).
+* The Agent has minimal network requirements. Typical network requirements,
+such as public IP addresses, complex firewall rules are unnecessary or minimized.
+* The Agent uses few hardware resources and is designed to scale easily.
