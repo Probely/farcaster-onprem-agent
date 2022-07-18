@@ -1,31 +1,29 @@
 # Installing the Agent on a Kubernetes Cluster
 
 In this directory, we provide two Kubernetes deployment manifests:
-  * `probely-agent-depl.yaml`: this is the recommended way to use the agent. Use it if your kernel version is >= 5.6
-  * `probely-agent-fallback-depl.yaml`: use this manifest to install the agent on older kernels.
+  * `agent-depl.yaml`: this is the recommended way to use the agent. Use it if your kernel version is >= 5.6
+  * `agent-fallback-depl.yaml`: use this manifest to install the agent on older kernels.
 
 The rest of this document assumes a recent kernel.
 
-1. Go to the [Scanning Agents](https://plus.probely.app/scanning-agents/) page. Create and download your agent installer
-2. Extract the Agent keys:
+1. Go to the [Scanning Agents](https://plus.probely.app/scanning-agents/) page.
+   Create an agent and take note of the **agent token**.
+2. Create the `probely` namespace
    ```shell
-   ./probely-onprem-agent-<agent_id>.run --noexec --target ./agent
+    kubectl create namespace probely
+    ```
+3. Create the `agent token` secret
+   ```shell
+   kubectl -n probely create secret generic farcaster-secrets \
+     --from-literal=token=<YOUR_AGENT_TOKEN>
    ```
-3. Deploy the agent keys on the cluster
+4. Deploy the agent pod
    ```shell
-   kubectl create namespace farcaster
-   cd agent/secrets/kubernetes
-   kubectl -n farcaster apply -f farcaster-secrets.yaml 
-   ````
-4. Deploy the agent pods
-   ```shell
-   git clone https://github.com/Probely/farcaster-onprem-agent.git
-   cd farcaster-onprem-agent/contrib/kubernetes
-   kubectl -n farcaster apply -f probely-agent-depl.yaml
+   kubectl apply -f https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/contrib/kubernetes/agent-depl.yaml
    ```
 5. Check that the agent is working properly
    ```shell
-   kubectl -n farcaster logs -f probely-onprem-agent-<id>
+   kubectl -n farcaster logs -f farcaster-agent-<id>
    ```
    You should see output similar to:
    ```

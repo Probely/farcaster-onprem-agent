@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: farcaster-agent
+    namespace: probely
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: farcaster-agent
+  template:
+    metadata:
+      labels:
+        app: farcaster-agent
+    spec:
+      initContainers:
+      - name: init
+        image: busybox:stable
+        command:
+        - sh
+        - -c
+        - sysctl -w net.ipv4.ip_forward=1 && sysctl -w net.ipv4.conf.all.forwarding=1
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - NET_ADMIN
+      containers:
+      - name: agent
+        image: probely/farcaster-onprem-agent:v2
+        imagePullPolicy: Always
+        env:
+        - name: FARCASTER_AGENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: farcaster-secrets
+              key: token
+        resources:
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+        volumeMounts:
+        - name: host-tun-dev
+          mountPath: /dev/net/tun
+      - name: host-tun-dev
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
+      terminationGracePeriodSeconds: 3
+  minReadySeconds: 2
