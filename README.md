@@ -94,7 +94,7 @@ Probely's support team.
 ## Launch the agent
 * Download the agent [docker-compose.yml](compose/docker-compose.yml) manifest.
 * Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable.
-  For example, if your agent token is `abcdef`, then `FARCASTER_AGENT_TOKEN=abcdef`
+  For example, if your agent token is `abcdef`, then set `FARCASTER_AGENT_TOKEN=abcdef`
 
 * Start the Agent:
 
