@@ -30,7 +30,7 @@ var configClient = &http.Client{
 	Timeout: time.Second * 10,
 }
 
-// Returns the Probaly API URL
+// Returns the Probely API URL
 func APIURL() string {
 	url := os.Getenv("FARCASTER_API_URL")
 	if url != "" {
