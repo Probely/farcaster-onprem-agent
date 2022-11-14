@@ -39,7 +39,8 @@ means: *all ports from 1024 to 2048, inclusive*.
 | Tunnel         | `agent-ip` | `hub.farcaster.probely.com`          | `UDP`        | `1024:65535`         | `443`                  |
 | DNS            | `agent-ip` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | Scan           | `agent-ip` | `<scan-target>`<sup>1</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>2</sup>    |
-| OOB Vulnerability Check <sup>5</sup> | `agent-ip`, `target-ip` | `52.17.201.157`| `TCP`, `UDP`| `*`                  | `*`    |
+| OOB Vulnerability Check <sup>5</sup> | `agent-ip`, `target-ip` | `52.17.201.157`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
+| OOB Vulnerability Check <sup>5</sup> | `agent-ip`, `target-ip` | `52.17.201.157`| `UDP` | `1024:65535`                  | `53` |
 | Docker         | `agent-ip` | `auth.docker.io`, `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`        |
 
 Notes:
