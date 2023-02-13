@@ -55,10 +55,13 @@ wg_update_endpoint() {
 
 wg_get_latest_handshake() {
 	iface="$1"
-	for i in $(seq 5); do
+	# Try to get the handshake for 90 seconds. The hub will update
+	# the known peers list every 30 seconds. Be sure to not make this
+	# value smaller than that.
+	for i in $(seq 90); do
 		handshake=$(wg show ${iface} latest-handshakes | awk -F' ' '{print $2}')
 		[ "${handshake}" != "0" ] && echo "${handshake}" && return
-		sleep 2
+		sleep 1
 	done
 	echo "0"
 }
