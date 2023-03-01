@@ -1,6 +1,6 @@
 FROM --platform=$BUILDPLATFORM rust as rust_builder
-ENV moproxy_tag=v0.3.10
-ENV udp_over_tcp_tag=v0.2.0
+ENV moproxy_tag=v0.3.12
+ENV udp_over_tcp_tag=v0.3.0
 ARG TARGETARCH
 RUN set -eux \
     && { [ "${TARGETARCH}" = "arm64" ] && TARGETARCH="aarch64" || TARGETARCH="x86-64"; } \
@@ -29,9 +29,9 @@ RUN set -eux \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.18 as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.20 as go_builder
 COPY ./farcaster /build/farcaster
-ARG wg_go_tag=0.0.20220316
+ARG wg_go_tag=0.0.20230223
 ARG TARGETARCH
 RUN set -eux \
     && mkdir -p /build \
