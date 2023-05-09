@@ -19,7 +19,10 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-const defaultAPIURL = "https://api.probely.com"
+var defaultAPIURLs = []string{
+	"https://api.eu.probely.com",
+	"https://api.us.probely.com",
+}
 
 type ConfigFile struct {
 	Data   string
@@ -31,16 +34,16 @@ var configClient = &http.Client{
 }
 
 // Returns the Probely API URL
-func APIURL() string {
+func APIURLs() []string {
 	url := os.Getenv("FARCASTER_API_URL")
 	if url != "" {
-		return url
+		return []string{url}
 	}
-	return defaultAPIURL
+	return defaultAPIURLs
 }
 
 // Fetch the encrypted configuration for the agent
-func FetchConfig(token string) ([]byte, error) {
+func FetchConfig(token, apiURL string) ([]byte, error) {
 	var data []byte
 	var err error
 
@@ -54,7 +57,7 @@ func FetchConfig(token string) ([]byte, error) {
 
 	// Fetch the configuration
 
-	url := fmt.Sprintf("%s/scanning-agents/%s/config-files/", APIURL(), pubToken)
+	url := fmt.Sprintf("%s/scanning-agents/%s/config-files/", apiURL, pubToken)
 	if _, err = http.NewRequest("GET", url, nil); err != nil {
 		return nil, err
 	}
