@@ -22,8 +22,6 @@ var configAgentCmd = &cobra.Command{
 
 func configAgent(cmd *cobra.Command, args []string) {
 	dest := args[0]
-	fmt.Fprintf(os.Stderr, "Fetching agent config from %s to %s...\n",
-		services.APIURL(), dest)
 
 	token := os.Getenv("FARCASTER_AGENT_TOKEN")
 	if len(token) == 0 {
@@ -32,7 +30,14 @@ func configAgent(cmd *cobra.Command, args []string) {
 	}
 
 	// Fetch config files using the Probely API
-	data, err := services.FetchConfig(token)
+	var data []byte
+	var err error
+	for _, url := range services.APIURLs() {
+		fmt.Fprintf(os.Stderr, "Fetching agent config from %s to %s...\n", url, dest)
+		if data, err = services.FetchConfig(token, url); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error downloading agent config: %s\n", err)
 		os.Exit(1)
