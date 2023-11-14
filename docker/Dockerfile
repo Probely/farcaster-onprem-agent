@@ -1,6 +1,6 @@
-FROM --platform=$BUILDPLATFORM rust as rust_builder
+FROM --platform=$BUILDPLATFORM rust:1-bookworm as rust_builder
 ENV moproxy_tag=v0.3.12
-ENV udp_over_tcp_tag=v0.3.0
+ENV udp_over_tcp_tag=v0.3.1
 ARG TARGETARCH
 RUN set -eux \
     && { [ "${TARGETARCH}" = "arm64" ] && TARGETARCH="aarch64" || TARGETARCH="x86-64"; } \
@@ -12,7 +12,7 @@ RUN set -eux \
     && cd moproxy \
     && git checkout -b tags/$moproxy_tag \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
-    && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-10" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
+    && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-12" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
     && mkdir -p target/release \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/moproxy target/release \
     # udp-over-tcp \
@@ -22,14 +22,14 @@ RUN set -eux \
     && git checkout -b tags/$udp_over_tcp_tag \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
     && env \
-        CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-10" \
+        CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-12" \
         cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
         --features env_logger --features structopt --bins \
     && mkdir -p target/release \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.20 as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.20-bookworm as go_builder
 COPY ./farcaster /build/farcaster
 ARG wg_go_tag=0.0.20230223
 ARG TARGETARCH
@@ -49,7 +49,7 @@ RUN set -eux \
     && cd -
 
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 COPY ./scripts/. /farcaster/bin/
 COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
 COPY --from=go_builder /build/farcaster/farcaster /usr/local/bin
