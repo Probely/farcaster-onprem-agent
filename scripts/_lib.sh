@@ -41,7 +41,7 @@ wg_stop() {
 	conf="${FARCASTER_PATH}/etc/${iface}.conf"
 	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
 
-	wg-quick down "${conf}"
+	wg-quick down "${conf}" || true
 }
 
 wg_update_endpoint() {

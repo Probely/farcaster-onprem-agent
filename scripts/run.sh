@@ -19,6 +19,7 @@ UDP2TCP_PORT=8443
 # The WireGuard protocol requires the client to handshake at most 180 seconds apart
 MAX_WG_HANDSHAKE_TTL=190
 HTTP_PROXY=${HTTP_PROXY:-}
+FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
 
 . "${FARCASTER_PATH}/bin/_lib.sh"
 
@@ -104,16 +105,19 @@ if ! start_proxy_maybe ${TCP_PROXY_PORT}; then
 fi
 echo "done"
 
-RC=1
 CONNECTED_UDP=0
 echo -ne "Connecting to Probely (via UDP)\t... "
-if wg_start "${WG_TUN_IF}"; then
-	if [ "$(wg_get_latest_handshake ${WG_TUN_IF})" != "0" ]; then
-		CONNECTED_UDP=1
-		echo "done"
-	else
-		echo "unsuccessful"
+if [ "${FARCASTER_FORCE_TCP}" = "0" ]; then
+	if wg_start "${WG_TUN_IF}"; then
+		if [ "$(wg_get_latest_handshake ${WG_TUN_IF})" != "0" ]; then
+			CONNECTED_UDP=1
+			echo "done"
+		else
+			echo "unsuccessful"
+		fi
 	fi
+else
+	echo "skipped"
 fi
 
 UDP2TCP_PID=0
