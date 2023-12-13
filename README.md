@@ -5,7 +5,7 @@ This document will guide you through the installation of the Farcaster Agent.
 The Farcaster Agent connects Probely to your on-premises network, using an encrypted WireGuard
 tunnel, allowing Probely to scan your internal applications.
 
-The Agent is open-source, and the code is freely available in the official
+The Agent is open-source, and the code is freely available on the official
 [repository](https://github.com/probely/farcaster-onprem-agent).
 
 The following diagram shows an example network topology depicting an on-premises
@@ -37,15 +37,15 @@ means: *all ports from 1024 to 2048, inclusive*.
 | API            | `<agent-ip>`<sup>1</sup> | `api.probely.com`<sup>4</sup>        | `TCP`        | `1024:65535`         | `443`                  |
 | Tunnel         | `<agent-ip>` | `hub.farcaster.probely.com`, `hub.farcaster.us.probely.com`          | `UDP`        | `1024:65535`         | `443`                  |
 | DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
-| Scan           | `<agent-ip>` | `<scan-target>`<sup>2</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>3</sup>    |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `UDP` | `1024:65535`                  | `53` |
+| Scan           | `<agent-ip>` | `<target-ip>`<sup>2</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>3</sup>    |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | `52.17.201.157`, `52.72.180.55`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | `52.17.201.157`, `52.72.180.55`| `UDP` | `1024:65535`                  | `53` |
 | Docker         | `<agent-ip>` | `auth.docker.io`, `registry*.docker.io`<sup>5</sup>     | `TCP`        | `1024:65535`         | `443`        |
 
 Notes:
 
 1. `<agent-ip>` is the internal IP of the host (on your network) where the on-prem agent is running
-2. `<scan-target>` is the internal IP of your web application. 
+2. `<target-ip>` is the internal IP of your web application. 
 If your target is configured to use internal extra-hosts, include their IPs here.
 The same goes if the target login URL is served from a different internal web application.
 3. `<target-port>` is the service port of the server of your web application.
@@ -123,7 +123,7 @@ Probely's support team.
   Running...
   ```
 
-  If the Agent is not connecting to Probely, please ensure that your [firewall](#firewall-rules)
+  If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements)
   is properly configured.
   
   Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY`
