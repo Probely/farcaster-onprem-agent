@@ -25,38 +25,38 @@ The Agent is a Docker container requiring very few resources, as detailed in the
 
 # Network Requirements
 
-In the following table, we detail the required firewall rules.
-
-We expect a NAT gateway (or an HTTP proxy) to exist on the network
-for the Agent to reach Probely's servers.
+**NOTE**: you do not need to manually add firewall rules on most networks.
+Some rules may be required if the agent is running on a network with strict network policies (e.g., all traffic
+is denied by default).
 
 To specify a port range, we use the `:` character. For example, `1024:2048`
 means: *all ports from 1024 to 2048, inclusive*.
 
 | Name           | Source     | Destination                          | Protocol     | Source Port          | Destination Port |
 | -------------- | ---------- | -------------------------------------| ------------ | -------------------- | -------------------- |
-| API            | `agent-ip` | `api.probely.com`<sup>3</sup>        | `TCP`        | `1024:65535`         | `443`                  |
-| Tunnel         | `agent-ip` | `hub.farcaster.probely.com`, `hub.farcaster.us.probely.com`          | `UDP`        | `1024:65535`         | `443`                  |
-| DNS            | `agent-ip` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
-| Scan           | `agent-ip` | `<scan-target>`<sup>1</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>2</sup>    |
-| OOB Vulnerability Check <sup>5</sup> | `agent-ip`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
-| OOB Vulnerability Check <sup>5</sup> | `agent-ip`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `UDP` | `1024:65535`                  | `53` |
-| Docker         | `agent-ip` | `auth.docker.io`, `registry*.docker.io`<sup>3</sup>     | `TCP`        | `1024:65535`         | `443`        |
+| API            | `<agent-ip>`<sup>1</sup> | `api.probely.com`<sup>4</sup>        | `TCP`        | `1024:65535`         | `443`                  |
+| Tunnel         | `<agent-ip>` | `hub.farcaster.probely.com`, `hub.farcaster.us.probely.com`          | `UDP`        | `1024:65535`         | `443`                  |
+| DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
+| Scan           | `<agent-ip>` | `<scan-target>`<sup>2</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>3</sup>    |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `target-ip` | `52.17.201.157`, `52.72.180.55`| `UDP` | `1024:65535`                  | `53` |
+| Docker         | `<agent-ip>` | `auth.docker.io`, `registry*.docker.io`<sup>5</sup>     | `TCP`        | `1024:65535`         | `443`        |
 
 Notes:
 
-1. `<scan-target>` is the internal IP of your web application. 
-If your target is configured to use internal extra-hosts, you must include their IPs here.
+1. `<agent-ip>` is the internal IP of the host (on your network) where the on-prem agent is running
+2. `<scan-target>` is the internal IP of your web application. 
+If your target is configured to use internal extra-hosts, include their IPs here.
 The same goes if the target login URL is served from a different internal web application.
-2. `<target-port>` is the service port of the server of your web application.
+3. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
-3. The IP addresses of these hosts are subject to change. We recommend allowing 
+4. The IP addresses of these hosts are subject to change. We recommend allowing 
 web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent
 will use an HTTP proxy if you set the `HTTP_PROXY` variable.
-4. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
-5. This server receives connections from potentially vulnerable systems on your infrastructure.
+5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
+6. This server receives connections from potentially vulnerable systems on your infrastructure.
 It is used, for example, to detect "Log4Shell"-type vulnerabilities.
-
+   
 # Installation
 
 The agent runs on a Docker container. It should work on any system with a Docker installation.
