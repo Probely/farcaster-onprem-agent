@@ -44,7 +44,7 @@ means: *all ports from 1024 to 2048, inclusive*.
 
 Notes:
 
-1. `<agent-ip>` is the internal IP of the host (on your network) where the on-prem agent is running
+1. `<agent-ip>` is the internal IP of the machine on your network where the Probely's Farcaster Agent is running. It is used by the agent to communicate with the Probely server.
 2. `<target-ip>` is the internal IP of your web application. 
 If your target is configured to use internal extra-hosts, include their IPs here.
 The same goes if the target login URL is served from a different internal web application.
@@ -94,7 +94,8 @@ Probely's support team.
 
 ## Launch the agent
 * Download the agent [docker-compose.yml](compose/docker-compose.yml) manifest.
-* Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable.
+* Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable with the token you have obtained when
+[creating a Scanning Agent in Probely](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).  
   For example, if your agent token is `abcdef`, then set `FARCASTER_AGENT_TOKEN=abcdef`
 
 * Start the Agent:
@@ -123,15 +124,14 @@ Probely's support team.
   Running...
   ```
 
-  If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements)
-  is properly configured.
+  If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
   
-  Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY`
-  environment variable is set on the `docker-compose.yml` file.
-  
-  While the agent should be able to use a proxy to connect to Probely, this may result in poor
-  network performance. We **strongly** recommend that you allow the agent to connect to
+  Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
+  While the agent should be able to use a proxy to connect to Probely, this may result in poor network performance. We **strongly recommend** that you allow the agent to connect to
   `hub.farcaster.probely.com` on `UDP` port `443`.
+
+  Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.  
+  Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
 
 # Building from source
 
