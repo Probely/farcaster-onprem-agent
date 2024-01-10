@@ -93,10 +93,8 @@ Probely's support team.
   ```
 
 ## Launch the agent
-* Download the agent [docker-compose.yml](compose/docker-compose.yml) manifest.
-* Edit `docker-compose.yml` and set the `FARCASTER_AGENT_TOKEN` variable with the token you have obtained when
-[creating a Scanning Agent in Probely](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).  
-  For example, if your agent token is `abcdef`, then set `FARCASTER_AGENT_TOKEN=abcdef`
+* Use the `docker-compose.yml` you saved in **Step 1.** of
+ [How to install a Scanning Agent](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).
 
 * Start the Agent:
 
