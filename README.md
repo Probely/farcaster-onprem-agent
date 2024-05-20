@@ -124,9 +124,8 @@ Probely's support team.
 
   If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
   
-  Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
-  While the agent should be able to use a proxy to connect to Probely, this may result in poor network performance. We **strongly recommend** that you allow the agent to connect to
-  `hub.farcaster.probely.com` on `UDP` port `443`.
+  Alternatively, the agent can use an HTTP proxy or to connect to Probely, if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
+  While the agent should be able to use a proxy or even a direct TCP connection to connect to Probely, this may result in poor network performance. Please see this article on the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `hub.farcaster.probely.com` on `UDP` port `443`.
 
   Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.  
   Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
