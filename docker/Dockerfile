@@ -1,6 +1,6 @@
 FROM --platform=$BUILDPLATFORM rust:1-bookworm as rust_builder
-ENV moproxy_tag=v0.3.12
-ENV udp_over_tcp_tag=v0.3.1
+ENV moproxy_tag=v0.5.1
+ENV udp_over_tcp_tag=v0.4.0
 ARG TARGETARCH
 RUN set -eux \
     && { [ "${TARGETARCH}" = "arm64" ] && TARGETARCH="aarch64" || TARGETARCH="x86-64"; } \
@@ -24,14 +24,14 @@ RUN set -eux \
     && env \
         CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-12" \
         cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
-        --features env_logger --features structopt --bins \
+        --features env_logger --features clap --bins \
     && mkdir -p target/release \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.20-bookworm as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.22-bookworm as go_builder
 COPY ./farcaster /build/farcaster
-ARG wg_go_tag=0.0.20230223
+ARG wg_go_commit=12269c2761734b15625017d8565745096325392f
 ARG TARGETARCH
 RUN set -eux \
     && mkdir -p /build \
@@ -40,7 +40,7 @@ RUN set -eux \
     && apt-get install -y git libc-dev gcc libmnl-dev iptables \
     && git clone https://git.zx2c4.com/wireguard-go \
     && cd wireguard-go \
-    && git checkout tags/${wg_go_tag} -b ${wg_go_tag} \
+    && git checkout ${wg_go_commit} -b ${wg_go_commit} \
     && env GOOS=linux GOARCH=$TARGETARCH make \
     && env GOOS=linux GOARCH=$TARGETARCH make install \
     && cd - \

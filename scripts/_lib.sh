@@ -236,7 +236,6 @@ create_moproxy_config() {
 address=${ipaddr}:${port}
 protocol=http
 test dns=127.0.0.1:53
-listen ports=${listen_port}
 ${auth}
 EOF
 }

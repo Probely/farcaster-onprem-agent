@@ -30,45 +30,49 @@ set -x
 
 if ! mkdir -pm 0700 ${WORK_DIR}; then
 	echo "Could not create the work directory!"
-	print_log {$LOG_FILE}
+	print_log "{$LOG_FILE}"
 	sleep 60
 	exit 1
 fi
 
-# Legacy config files
-if [ -f "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ]; then
-	cp "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ${WORK_DIR}/
-
-# New (but previously built) config files
-elif [ -f "${SECRETS_DIR_V2}/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V2}/wg-gateway.conf" ]; then
-	cp ${SECRETS_DIR_V2}/* ${WORK_DIR}/
-
-# No config files found. Try to fetch and build them using an agent token
-elif [ "${FARCASTER_AGENT_TOKEN:-x}" != "x" ]; then
+function download_and_deploy_v2_config() {
 	echo -ne "Downloading agent configuration\t... "
 	if ! farcaster config-agent "${SECRETS_DIR_V2}/"; then
 		echo "failed"
 		echo "Could not configure the agent"
-		print_log ${LOG_FILE}
-		exit 1
+		return 1
 	fi
 	echo "done"
 	echo -ne "Deploying agent configuration\t... "
 	if ! cp ${SECRETS_DIR_V2}/* "${WORK_DIR}"; then
 		echo "failed"
 		echo "Could not deploy config to ${WORK_DIR}"
-		print_log ${LOG_FILE}
-		exit 1
+		return 1
 	fi
 	echo "done"
+	return 0
+}
 
-else
-	echo "Cannot fetch the agent configuration files!"
-	echo "Please set the FARCASTER_AGENT_TOKEN environment variable"
-	sleep 60
-	exit 1
+# If the agent token is set, download the configuration files
+v2_config_success="false"
+if [ "${FARCASTER_AGENT_TOKEN:-x}" != "x" ]; then
+	if download_and_deploy_v2_config; then
+		v2_config_success="true"
+	fi
 fi
 
+# If we could not download the configuration files, try to use the legacy ones
+if [ "${v2_config_success}" != "true" ]; then
+	# Legacy config files
+	if [ -f "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ]; then
+		cp "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ${WORK_DIR}/
+	# New (but previously built) config files
+	elif [ -f "${SECRETS_DIR_V2}/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V2}/wg-gateway.conf" ]; then
+		cp ${SECRETS_DIR_V2}/* ${WORK_DIR}/
+	else
+		print_log ${LOG_FILE}
+	fi
+fi
 
 HUB_HOST="$(wg_get_endpoint ${WG_TUN_IF})"
 
