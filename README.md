@@ -35,7 +35,7 @@ means: *all ports from 1024 to 2048, inclusive*.
 | Name           | Source     | Destination                          | Protocol     | Source Port          | Destination Port |
 | -------------- | ---------- | -------------------------------------| ------------ | -------------------- | -------------------- |
 | API            | `<agent-ip>`<sup>1</sup> | `api.probely.com`<sup>4</sup>        | `TCP`        | `1024:65535`         | `443`                  |
-| Tunnel         | `<agent-ip>` | `hub.farcaster.probely.com`, `hub.farcaster.us.probely.com`          | `UDP`        | `1024:65535`         | `443`                  |
+| Tunnel         | `<agent-ip>` | `54.247.135.113`, `44.212.186.140`          | `UDP`        | `1024:65535`         | `443`                  |
 | DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | Scan           | `<agent-ip>` | `<target-ip>`<sup>2</sup>          | `TCP`        | `1024:65535`         | `<target-port>`<sup>3</sup>    |
 | OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | `52.17.201.157`, `52.72.180.55`| `TCP` | `1024:65535`                  | `53`, `80`, `443`, `389` |
@@ -125,8 +125,7 @@ Probely's support team.
   If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
   
   Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
-  While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to
-  `hub.farcaster.probely.com` on `UDP` port `443`.
+  While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113` and `44.212.186.140` on `UDP` port `443`.
 
   Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.  
   Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
