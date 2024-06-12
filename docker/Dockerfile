@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1-bookworm as rust_builder
+FROM --platform=$BUILDPLATFORM rust:1-bullseye as rust_builder
 ENV moproxy_tag=v0.5.1
 ENV udp_over_tcp_tag=v0.4.0
 ARG TARGETARCH
@@ -12,7 +12,7 @@ RUN set -eux \
     && cd moproxy \
     && git checkout -b tags/$moproxy_tag \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
-    && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-12" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
+    && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-10" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
     && mkdir -p target/release \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/moproxy target/release \
     # udp-over-tcp \
@@ -22,14 +22,14 @@ RUN set -eux \
     && git checkout -b tags/$udp_over_tcp_tag \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
     && env \
-        CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-12" \
+        CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-10" \
         cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
         --features env_logger --features clap --bins \
     && mkdir -p target/release \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.22-bookworm as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.22-bullseye as go_builder
 COPY ./farcaster /build/farcaster
 ARG wg_go_commit=12269c2761734b15625017d8565745096325392f
 ARG TARGETARCH
@@ -49,7 +49,7 @@ RUN set -eux \
     && cd -
 
 
-FROM debian:bookworm-slim
+FROM debian:bullseye-slim
 COPY ./scripts/. /farcaster/bin/
 COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
 COPY --from=go_builder /build/farcaster/farcaster /usr/local/bin
