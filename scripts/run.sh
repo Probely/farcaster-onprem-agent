@@ -154,7 +154,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 	echo "done"
 fi
 
-echo -ne "Setting local gateway filter rules\t... "
+echo -ne "Setting gateway filter rules\t... "
 # Check if the firewall should be enabled based on the DISABLE_FIREWALL value
 if [ "${DISABLE_FIREWALL}" != "true" ] &&
    [ "${DISABLE_FIREWALL}" != "yes" ] &&
@@ -173,7 +173,7 @@ else
 	echo "skipped"
 fi
 
-echo -ne "Setting local gateway NAT rules\t... "
+echo -ne "Setting gateway NAT rules\t... "
 if ! set_gw_nat_rules; then
 	echo "failed"
 	echo
