@@ -35,6 +35,8 @@ spec:
             secretKeyRef:
               name: farcaster-secrets
               key: token
+        - name: DISABLE_FIREWALL
+          value: "0"
         resources:
           requests:
             cpu: 250m
