@@ -261,8 +261,7 @@ set_proxy_redirect_rules() {
 	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
 }
 
-function set_gw_filter_and_nat_rules() {
-	# Filter
+function set_gw_filter_rules() {
 	iptables -N FARCASTER-FILTER
 	iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 	iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
@@ -280,13 +279,13 @@ function set_gw_filter_and_nat_rules() {
 	iptables -P FORWARD DROP
 	iptables -A FORWARD -j FARCASTER-FILTER
 	iptables -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
+}
 
-	# NAT
+function set_gw_nat_rules() {
 	iptables -t nat -N FARCASTER-NAT
 	iptables -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
 	iptables -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
 	iptables -t nat -A FARCASTER-NAT -j MASQUERADE
-
 	iptables -t nat -A POSTROUTING -j FARCASTER-NAT
 }
 

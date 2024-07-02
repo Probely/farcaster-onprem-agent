@@ -20,6 +20,7 @@ UDP2TCP_PORT=8443
 MAX_WG_HANDSHAKE_TTL=190
 HTTP_PROXY=${HTTP_PROXY:-}
 FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
+DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 
 . "${FARCASTER_PATH}/bin/_lib.sh"
 
@@ -153,15 +154,36 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 	echo "done"
 fi
 
-echo -ne "Setting local gateway rules\t... "
-if ! set_gw_filter_and_nat_rules; then
+echo -ne "Setting gateway filter rules\t... "
+# Check if the firewall should be enabled based on the DISABLE_FIREWALL value
+if [ "${DISABLE_FIREWALL}" != "true" ] &&
+   [ "${DISABLE_FIREWALL}" != "yes" ] &&
+   [ "${DISABLE_FIREWALL}" != "1" ] &&
+   [ "${DISABLE_FIREWALL}" != "enable" ]; then
+   if ! set_gw_filter_rules; then
+		echo "failed"
+		echo
+		echo "Could not set network gateway filter rules."
+		print_log ${LOG_FILE}
+		exit 1
+	else
+		echo "done"
+	fi
+else
+	echo "skipped"
+fi
+
+echo -ne "Setting gateway NAT rules\t... "
+if ! set_gw_nat_rules; then
 	echo "failed"
 	echo
-	echo "Could not set network gateway filter and NAT rules."
+	echo "Could not set network gateway NAT rules."
 	print_log ${LOG_FILE}
 	exit 1
 fi
 echo "done"
+
+
 
 echo -ne "Starting WireGuard gateway\t... "
 if ! wg_start "${WG_GW_IF}"; then
