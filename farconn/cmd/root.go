@@ -10,7 +10,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   path.Base(os.Args[0]),
-	Short: "Helper tool for the farcaster agent runtime environment",
+	Short: "Farcaster agent connection helper",
 	Run:   run,
 }
 

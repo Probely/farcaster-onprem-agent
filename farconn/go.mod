@@ -1,4 +1,4 @@
-module github.com/probely/farcaster-onprem-agent/farcaster
+module github.com/probely/farcaster-onprem-agent/farcon
 
 go 1.22
 

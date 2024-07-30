@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := build
-BIN := farcaster
+BIN := farcon
 
 fmt:
 	go fmt ./...
