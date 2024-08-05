@@ -18,7 +18,9 @@ TCP_PROXY_PORT=8080
 UDP2TCP_PORT=8443
 # The WireGuard protocol requires the client to handshake at most 180 seconds apart
 MAX_WG_HANDSHAKE_TTL=190
-HTTP_PROXY=${HTTP_PROXY:-}
+HTTPS_PROXY="${HTTPS_PROXY:-}"
+# Use HTTPS_PROXY as a fallback for HTTP_PROXY
+HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY:-}}"
 FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
 DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 
