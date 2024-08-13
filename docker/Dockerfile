@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1-bullseye as rust_builder
+FROM --platform=$BUILDPLATFORM rust:1-bullseye AS rust_builder
 ENV moproxy_tag=v0.5.1
 ENV udp_over_tcp_tag=v0.4.0
 ARG TARGETARCH
@@ -29,7 +29,7 @@ RUN set -eux \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.22-bullseye as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.22-bullseye AS go_builder
 COPY ./farcaster /build/farcaster
 ARG wg_go_commit=12269c2761734b15625017d8565745096325392f
 ARG TARGETARCH

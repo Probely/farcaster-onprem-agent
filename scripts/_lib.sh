@@ -6,6 +6,7 @@ PROXY_REGEXP='^(http(s)?://)?(([0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+)@)?([0-9a-zA-Z._-]+
 WORKDIR=/run/farcaster
 HUB_IP_TTL=300
 WG_DEFAULT_PORT=51820
+INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16}"
 
 wg_setup_iface() {
 	iface="$1"
@@ -245,16 +246,16 @@ set_proxy_redirect_rules() {
 	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	# Proxy redirect chain
 	iptables -t nat -N PROXY-REDIRECT
-	for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+	for net in ${INTERNAL_NETS}; do
 		iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
 	done
 	iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
 
 	# Remote traffic arriving in the tunnel
-	iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+	iptables -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
 
-	# Local TCP traffic from specific services go through the proxy
-	iptables -t nat -I OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
+	# Traffic from the UDP to TCP tunnel. If a proxy is defined, use it
+	iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
 	# iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
@@ -299,7 +300,7 @@ start_proxy_maybe() {
 	create_moproxy_config ${config_path} ${listen_port}
 	set_proxy_redirect_rules ${listen_port}
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} >/dev/null &
+		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
