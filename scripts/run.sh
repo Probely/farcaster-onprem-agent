@@ -2,33 +2,12 @@
 
 set -eu
 
-umask 007
-
-export LC_ALL=C
-export FARCASTER_PATH=/farcaster
-export PATH="${FARCASTER_PATH}"/sbin:"${FARCASTER_PATH}"/bin:${PATH}
-
-LOG_FILE="/run/log/farcaster.log"
-WG_TUN_IF="wg-tunnel"
-WG_GW_IF="wg-gateway"
-SECRETS_DIR_V2="/secrets/farcaster/data_v2"
-SECRETS_DIR_V0="/secrets/farcaster/data"
-WORK_DIR="/run/farcaster"
-TCP_PROXY_PORT=8080
-UDP2TCP_PORT=8443
-# The WireGuard protocol requires the client to handshake at most 180 seconds apart
-MAX_WG_HANDSHAKE_TTL=190
-HTTPS_PROXY="${HTTPS_PROXY:-}"
-# Use HTTPS_PROXY as a fallback for HTTP_PROXY
-HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY:-}}"
-FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
-DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
-
-. "${FARCASTER_PATH}/bin/_lib.sh"
-
-# Enable debug
+# Store the original stder
+exec 3>&2
+# Redirect stderr to the log file
 mkdir -pm 0700 $(dirname ${LOG_FILE})
 exec 2>>${LOG_FILE}
+# Enable debug (will be printed to the log file)
 set -x
 
 if ! mkdir -pm 0700 ${WORK_DIR}; then
@@ -38,9 +17,21 @@ if ! mkdir -pm 0700 ${WORK_DIR}; then
 	exit 1
 fi
 
+
+SECRETS_DIR_V2="/secrets/farcaster/data_v2"
+SECRETS_DIR_V0="/secrets/farcaster/data"
+UDP2TCP_PORT=8443
+
+# The WireGuard protocol requires the client to handshake at most 180 seconds apart
+MAX_WG_HANDSHAKE_TTL=190
+FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
+DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
+
+. "${FARCASTER_PATH}/bin/_lib.sh"
+
 function download_and_deploy_v2_config() {
 	echo -ne "Downloading agent configuration\t... "
-	if ! farcaster config-agent "${SECRETS_DIR_V2}/"; then
+	if ! farconn config-agent "${SECRETS_DIR_V2}/"; then
 		echo "failed"
 		echo "Could not configure the agent"
 		return 1
@@ -74,6 +65,7 @@ if [ "${v2_config_success}" != "true" ]; then
 		cp ${SECRETS_DIR_V2}/* ${WORK_DIR}/
 	else
 		print_log ${LOG_FILE}
+		echo "Could not find the configuration files and the agent token is not set."
 	fi
 fi
 
@@ -184,8 +176,6 @@ if ! set_gw_nat_rules; then
 	exit 1
 fi
 echo "done"
-
-
 
 echo -ne "Starting WireGuard gateway\t... "
 if ! wg_start "${WG_GW_IF}"; then

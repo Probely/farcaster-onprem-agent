@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := build
-BIN := farcon
+BIN := farconn
 
 fmt:
 	go fmt ./...
@@ -13,7 +13,10 @@ vet: fmt
 build: vet
 	go build -o $(BIN) main.go
 
+build-fast:
+	go build -o $(BIN) main.go
+
 clean:
 	rm -rf $(BIN)
 
-.PHONY: fmt lint vet build clean
+.PHONY: fmt lint vet build clean build-fast

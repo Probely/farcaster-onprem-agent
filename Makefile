@@ -7,16 +7,18 @@ VER_MINOR=$(shell echo ${VERSION} | awk -F'.' '{print $$2}')
 .PHONY: build build-local clean prepare check-env
 
 build: check-env
-	docker buildx build --builder multiarch -f docker/Dockerfile \
+	docker buildx build --builder multiarch \
 		--platform $(PLATFORMS) \
-		-t $(REPO):$(VER_MAJOR) -t $(REPO):$(VER_MAJOR).$(VER_MINOR) -t $(REPO):$(VERSION) \
+		--build-arg "VERSION=${VERSION}" \
+		-t $(REPO):v$(VER_MAJOR) -t $(REPO):v$(VER_MAJOR).$(VER_MINOR) -t $(REPO):v$(VERSION) \
 		--push .
 
 build-local: check-env
 	$(eval PLATFORMS=linux/amd64)
-	docker buildx build --builder multiarch -f docker/Dockerfile \
+	docker buildx build --builder multiarch \
 		--platform $(PLATFORMS) \
-		-t $(REPO):$(VERSION) \
+		--build-arg "VERSION=${VERSION}" \
+		-t $(REPO):v$(VERSION) \
 		--load \
 		.
 
@@ -29,5 +31,7 @@ prepare:
 
 check-env:
 ifndef VERSION
-	$(error VERSION env variable is undefined)
+	$(error VERSION env variable is undefined. Set it with `VERSION=x.y.z make ...`)
 endif
+	@# VERSION must be a valid semver
+	@echo ${VERSION} | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || (echo "VERSION must be a valid semver" && exit 1)

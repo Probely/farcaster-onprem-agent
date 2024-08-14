@@ -30,29 +30,28 @@ RUN set -eux \
 
 
 FROM --platform=$BUILDPLATFORM golang:1.22-bullseye AS go_builder
-COPY ./farcaster /build/farcaster
-ARG wg_go_commit=12269c2761734b15625017d8565745096325392f
+COPY ./farconn /build/farconn
+COPY ./farcaster-go /build/farcaster-go
 ARG TARGETARCH
+ARG VERSION
 RUN set -eux \
     && mkdir -p /build \
     && cd /build \
     && apt-get update -y \
     && apt-get install -y git libc-dev gcc libmnl-dev iptables \
-    && git clone https://git.zx2c4.com/wireguard-go \
-    && cd wireguard-go \
-    && git checkout ${wg_go_commit} -b ${wg_go_commit} \
-    && env GOOS=linux GOARCH=$TARGETARCH make \
-    && env GOOS=linux GOARCH=$TARGETARCH make install \
+    \
+    && cd farconn \
+    && env GOOS=linux GOARCH=$TARGETARCH make build-fast \
     && cd - \
-    && cd farcaster \
-    && env GOOS=linux GOARCH=$TARGETARCH make \
+    && cd farcaster-go \
+    && env VERSION=${VERSION} GOOS=linux GOARCH=$TARGETARCH make \
     && cd -
 
 
 FROM debian:bullseye-slim
 COPY ./scripts/. /farcaster/bin/
-COPY --from=go_builder /usr/bin/wireguard-go /usr/bin/
-COPY --from=go_builder /build/farcaster/farcaster /usr/local/bin
+COPY --from=go_builder /build/farconn/farconn /usr/local/bin
+COPY --from=go_builder /build/farcaster-go/bin/farcasterd /usr/local/bin
 COPY --from=rust_builder /moproxy/target/release/moproxy /usr/local/bin
 COPY --from=rust_builder /udp-over-tcp/target/release/udp2tcp /usr/local/bin
 RUN set -eux \
@@ -82,7 +81,7 @@ RUN set -eux \
     && { useradd --system --home-dir / --shell /bin/false proxy || true; } \
     && useradd --system --home-dir / --shell /bin/false diag \
     && useradd --system --home-dir / --shell /bin/false tcptun \
-    && ln /usr/local/bin/farcaster /usr/local/bin/diag \
+    && ln /usr/local/bin/farconn /usr/local/bin/diag \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
     # Cleanup
@@ -91,7 +90,7 @@ RUN set -eux \
     # Make sure that binaries were properly built
     && /usr/local/bin/moproxy --help >/dev/null 2>&1 \
     && /usr/local/bin/udp2tcp --help >/dev/null 2>&1 \
-    && /usr/local/bin/farcaster >/dev/null 2>&1 \
-    && /usr/bin/wireguard-go >/dev/null 2>&1
+    && /usr/local/bin/farconn >/dev/null 2>&1 \
+    && /usr/local/bin/farcasterd --help >/dev/null 2>&1
 
-ENTRYPOINT ["/farcaster/bin/run.sh"]
+ENTRYPOINT ["/farcaster/bin/entrypoint.sh"]

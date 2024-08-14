@@ -22,7 +22,7 @@ func PrintPadf(f string, args ...interface{}) {
 func PrintErr(err error) {
 	if err != nil {
 		fmt.Println(errStr)
-		fmt.Printf("  * Error: %s\n", err)
+		fmt.Printf("  * error: %s\n", err)
 	} else {
 		fmt.Println(okStr)
 	}
@@ -31,7 +31,7 @@ func PrintErr(err error) {
 func PrintWarn(warn error) {
 	if warn != nil {
 		fmt.Println(warnStr)
-		fmt.Printf("  * Error: %s\n", warn)
+		fmt.Printf("  * error: %s\n", warn)
 	} else {
 		fmt.Println(okStr)
 	}

@@ -5,16 +5,7 @@ import (
 	"testing"
 )
 
-var token = os.Getenv("FARCASTER_API_TOKEN")
-
-//func TestInvalidToken(t *testing.T) {
-//	a := New("invalid-token", false, nil)
-//	err := a.CheckToken()
-//	if err == nil {
-//		t.Error("Invalid token considered valid")
-//	}
-//
-//}
+var token = os.Getenv("FARCASTER_AGENT_TOKEN")
 
 func TestAgentLifecycle(t *testing.T) {
 	a := New(token, nil)

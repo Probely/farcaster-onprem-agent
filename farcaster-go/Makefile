@@ -19,14 +19,6 @@ version: check-env
 	@echo 'package settings' >> settings/version.go
 	@echo 'const Version = "${VERSION}"' >> settings/version.go
 
-windows: version
-	GOOS=windows GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-windows-amd64.exe
-	#GOOS=windows GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-windows-arm64.exe
-
-linux: version
-	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-linux-amd64
-	#GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-linux-arm64
-
 linux-compat: linux-compat-build linux-compat-extract
 
 linux-compat-build:
@@ -39,6 +31,14 @@ linux-compat-extract: linux-compat-build
 		docker cp ${NAME}-tmp-container:/build/bin/${NAME}-linux-$${arch} ./bin || true; \
 	done
 	docker rm ${NAME}-tmp-container
+
+windows: version
+	GOOS=windows GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-windows-amd64.exe
+	GOOS=windows GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-windows-arm64.exe
+
+linux: version
+	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-linux-amd64
+	GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-linux-arm64
 
 darwin: version
 	GOOS=darwin GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-darwin-amd64

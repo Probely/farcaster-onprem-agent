@@ -25,8 +25,9 @@ const (
 	// The total number of connection attempts is 2 * maxConnTries.
 	maxConnTries = 3
 
-	// Environment variable name for the API token.
-	envTokenName = "FARCASTER_API_TOKEN"
+	// Environment variable name for the API (old name) and AGENT tokens.
+	envOldTokenName = "FARCASTER_API_TOKEN"
+	envTokenName    = "FARCASTER_AGENT_TOKEN"
 )
 
 var (
@@ -53,8 +54,15 @@ var rootCmd = &cobra.Command{
 		if controlAPI == "" && token == "" {
 			// Check if the token is set in the environment.
 			envToken := os.Getenv(envTokenName)
+			if envToken == "" {
+				envToken = os.Getenv(envOldTokenName)
+				if envToken != "" {
+					fmt.Fprintf(os.Stderr, "warning: %s environment variable is deprecated, use %s instead\n",
+						envOldTokenName, envTokenName)
+				}
+			}
 			if envToken == "" && controlAPI == "" {
-				errMsg := "Error: --token argument or " + envTokenName + " environment variable is required"
+				errMsg := "error: --token argument or " + envTokenName + " environment variable is required"
 				fmt.Fprintln(os.Stderr, errMsg)
 				os.Exit(1)
 			}
@@ -119,7 +127,7 @@ func runAgent(token string) {
 	// If running as a Windows service, we need a path to the named pipe.
 	if isWindowsService() {
 		if controlAPI == "" {
-			logger.Error("Error: --control argument is required when running as a service")
+			logger.Error("error: --control argument is required when running as a service")
 			exit(1)
 		}
 		s, err := control.NewServer(controlAPI, group, logger)

@@ -219,6 +219,14 @@ start_udp_over_tcp_tunnel() {
 	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
 }
 
+get_first_nameserver() {
+    ns=$(grep -m 1 '^nameserver' /etc/resolv.conf | awk '{print $2}')
+	if [ -z "${ns}" ]; then
+		ns="127.0.0.1"
+	fi
+	echo "${ns}"
+}
+
 create_moproxy_config() {
 	config_path="$1"
 	listen_port="$2"
@@ -236,14 +244,15 @@ create_moproxy_config() {
 [default]
 address=${ipaddr}:${port}
 protocol=http
-test dns=127.0.0.1:53
+test dns=$(get_first_nameserver):53
 ${auth}
 EOF
+
+	return $?
 }
 
 set_proxy_redirect_rules() {
 	proxy_port="$1"
-	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	# Proxy redirect chain
 	iptables -t nat -N PROXY-REDIRECT
 	for net in ${INTERNAL_NETS}; do
@@ -259,7 +268,9 @@ set_proxy_redirect_rules() {
 	# iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
-	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
+	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp --dport "${proxy_port}" -j ACCEPT
+
+	return $?
 }
 
 function set_gw_filter_rules() {
@@ -297,13 +308,23 @@ start_proxy_maybe() {
 	mkdir -p ${rundir}
 	chmod 0711 ${rundir}
 	config_path="${rundir}/config.ini"
-	create_moproxy_config ${config_path} ${listen_port}
-	set_proxy_redirect_rules ${listen_port}
+	if ! create_moproxy_config ${config_path} ${listen_port}; then
+		echo "Could not create the moproxy config file" >&2
+		return 1
+	fi
+	if ! set_proxy_redirect_rules ${listen_port}; then
+		echo "Could not set the proxy redirect rules" >&2
+		return 1
+	fi
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
 		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
+}
+
+start_userspace_agent() {
+	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd
 }
 
 function print_log() {
