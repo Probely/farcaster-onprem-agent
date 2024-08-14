@@ -324,7 +324,12 @@ start_proxy_maybe() {
 }
 
 start_userspace_agent() {
-	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd
+	debug=$1
+	extra=""
+	if [ $debug -eq 1 ]; then
+		extra_args="-d"
+	fi
+	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd $extra_args
 }
 
 function print_log() {

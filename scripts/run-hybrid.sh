@@ -41,7 +41,7 @@ exec 2>&3
 exec 3>&-
 
 # Finally, start the userspace agent
-start_userspace_agent
+start_userspace_agent ${FARCASTER_DEBUG:-0}
 
 if [ $? -ne 0 ]; then
 	echo "Could not start the userspace agent!"

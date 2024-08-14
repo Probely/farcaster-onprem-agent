@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +93,7 @@ func (r *resolver) Forward(query *dns.Msg, transport string) (*dns.Msg, error) {
 	}
 
 	question := query.Question[0]
+
 	var resp *dns.Msg
 	var err error
 	if question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA {
@@ -121,6 +123,11 @@ func (r *resolver) lookupIP(ctx context.Context, query *dns.Msg) (*dns.Msg, erro
 	// Resolve the hostname.
 	question := query.Question[0]
 	host := dns.Fqdn(question.Name)
+	// If host ndots == 1 remove it so we can use the system search domains.
+	if strings.Count(host, ".") == 1 && strings.HasSuffix(host, ".") {
+		host = host[:len(host)-1]
+	}
+
 	resp := new(dns.Msg)
 	resp.SetReply(query)
 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
