@@ -2,7 +2,7 @@
 
 This document will guide you through the installation of the Farcaster Agent.
 
-The Farcaster Agent connects Probely to your on-premises network, using an encrypted WireGuard
+The Farcaster Agent connects Probely to your on-premises network using an encrypted WireGuard
 tunnel, allowing Probely to scan your internal applications.
 
 The Agent is open-source, and the code is freely available on the official
@@ -24,8 +24,8 @@ The Agent is a Docker container requiring very few resources, as detailed in the
 
 # Network Requirements
 
-**NOTE**: you do not need to manually add firewall rules on most networks.
-Some rules may be required if the agent is running on a network with strict network policies (e.g., all traffic
+**NOTE**: You do not need to manually add firewall rules on most networks.
+Some rules may be required if the agent runs on a network with strict network policies (e.g., all **output** traffic
 is denied by default).
 
 To specify a port range, we use the `:` character. For example, `1024:2048`
@@ -43,10 +43,10 @@ means: *all ports from 1024 to 2048, inclusive*.
 
 Notes:
 
-1. `<agent-ip>` is the internal IP of the machine on your network where the Probely's Farcaster Agent is running. It is used by the agent to communicate with the Probely server.
+1. `<agent-ip>` is the internal IP of the machine on your network where Probely's Farcaster Agent is running. It is used by the agent to communicate with the Probely server.
 2. `<target-ip>` is the internal IP of your web application. 
 If your target is configured to use internal extra-hosts, include their IPs here.
-The same goes if the target login URL is served from a different internal web application.
+The same goes for the target login URL served by a different internal web application.
 3. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
 4. The IP addresses of these hosts are subject to change. We recommend allowing 
@@ -182,5 +182,5 @@ surface.
 The Agent follows simple design decisions, and uses modern open-source standard
 components, such as [WireGuard](https://www.wireguard.com/).
 * The Agent has minimal network requirements. Typical network requirements,
-such as public IP addresses, complex firewall rules are unnecessary or minimized.
+such as public IP addresses and complex firewall rules, are unnecessary or minimized.
 * The Agent uses few hardware resources and is designed to scale easily.
