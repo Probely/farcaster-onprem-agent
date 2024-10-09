@@ -43,10 +43,10 @@ means: *all ports from 1024 to 2048, inclusive*.
 
 Notes:
 
-1. `<agent-ip>` is the internal IP of the machine on your network where Probely's Farcaster Agent is running. It is used by the agent to communicate with the Probely server.
+1. `<agent-ip>` is the internal IP of the machine on your network where Probely's Farcaster Agent is running. The agent uses it to communicate with the Probely server.
 2. `<target-ip>` is the internal IP of your web application. 
 If your target is configured to use internal extra-hosts, include their IPs here.
-The same goes for the target login URL served by a different internal web application.
+The same goes for the target login URL if a different internal web application serves it.
 3. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
 4. The IP addresses of these hosts are subject to change. We recommend allowing 
@@ -68,8 +68,8 @@ The agent needs an API token to connect to Probely's network.
 ## Required software
 
 Both [Docker](https://docs.docker.com/engine/install/) and
-[Docker Compose](https://docs.docker.com/compose/install/) must be installed
-for these instructions to work. Please make sure those requirements are met.
+[Docker Compose](https://docs.docker.com/compose/install/) must be installed.
+Please make sure those requirements are met.
 
 ### Kubernetes (optional)
 We provide an example Agent Kubernetes deployment
@@ -123,7 +123,7 @@ Probely's support team.
 
   If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
   
-  Alternatively, the agent can use an HTTP proxy to connect to Probely, if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
+  Alternatively, the agent can use an HTTP proxy to connect to Probely if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
   While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113` and `44.212.186.140` on `UDP` port `443`.
 
   Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.  
@@ -149,19 +149,19 @@ VERSION=local make build-local
 ```
 
 Remember to reference your custom-built Docker images on the `docker-compose.yml`
-file, or Kubernetes pod/deployment manifest you configure. If not specified,
+file or Kubernetes pod/deployment manifest you configure. If not specified,
 the default Probely docker Agent images are used.
 
 # Security considerations
 
 Installing third-party software on your network requires some degree of trust.
-Being security professionals ourselves, we are very aware of this, and designed
+Being security professionals ourselves, we are very aware of this and designed
 Probely following a set of security principles.
 
 **Transparency**
 
 * No black boxes: code and build instructions are open source, with a permissive license.
-* You have complete control over the Agent, and can ensure that it has not
+* You have complete control over the Agent and can ensure it has not
 been tampered with.
 
 **Least privilege**
@@ -172,14 +172,14 @@ been tampered with.
 design principles. All traffic is end-to-end encrypted between agents.
 Even inside Probely's "internal" networks.
 * The Agent has been hardened in several ways, from using memory-safe languages
-(e.g. Go and Rust) to modern, recommended, cryptographic algorithms.
+(e.g., Go and Rust) to modern, recommended cryptographic algorithms.
 * The Agent does not listen on any public Internet port, reducing its attack
 surface.
 
 **Simplicity**
 
 * We believe simplicity enables security.
-The Agent follows simple design decisions, and uses modern open-source standard
+The Agent follows simple design decisions and uses modern open-source standard
 components, such as [WireGuard](https://www.wireguard.com/).
 * The Agent has minimal network requirements. Typical network requirements,
 such as public IP addresses and complex firewall rules, are unnecessary or minimized.
