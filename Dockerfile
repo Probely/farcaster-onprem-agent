@@ -69,8 +69,6 @@ RUN set -eux \
        wireguard-tools \
        ca-certificates \
     && apt-get clean \
-    && update-alternatives --set iptables /usr/sbin/iptables-legacy \
-    && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
     && ln -s /run/farcaster/wg-tunnel.conf /farcaster/etc/ \
     && ln -s /run/farcaster/wg-gateway.conf /farcaster/etc/ \
