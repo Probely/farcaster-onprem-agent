@@ -8,6 +8,17 @@ HUB_IP_TTL=300
 WG_DEFAULT_PORT=51820
 INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16}"
 
+check_iptables() {
+	if iptables-nft -t filter -L >/dev/null 2>&1; then
+		echo $(which iptables-nft)
+		return 0
+	elif iptables-legacy -t filter -L >/dev/null 2>&1; then
+		echo $(which iptables-legacy)
+		return 0
+	fi
+	return 1
+}
+
 wg_setup_iface() {
 	iface="$1"
 
@@ -161,9 +172,9 @@ start_dnsmasq() {
 	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
 	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	for proto in tcp udp; do
-		iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
+		${IPT_CMD} -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
 		    --dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
-		iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
+		${IPT_CMD} -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
 		    -d "${gw_addr}" --dport "${lport}" -j ACCEPT
 	done
 }
@@ -254,51 +265,51 @@ EOF
 set_proxy_redirect_rules() {
 	proxy_port="$1"
 	# Proxy redirect chain
-	iptables -t nat -N PROXY-REDIRECT
+	${IPT_CMD} -t nat -N PROXY-REDIRECT
 	for net in ${INTERNAL_NETS}; do
-		iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
+		${IPT_CMD} -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
 	done
-	iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
 
 	# Remote traffic arriving in the tunnel
-	iptables -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+	${IPT_CMD} -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
 
 	# Traffic from the UDP to TCP tunnel. If a proxy is defined, use it
-	iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
-	# iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
+	${IPT_CMD} -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
+	# ${IPT_CMD} -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
-	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp --dport "${proxy_port}" -j ACCEPT
+	${IPT_CMD} -t filter -I INPUT -i "${WG_GW_IF}" -p tcp --dport "${proxy_port}" -j ACCEPT
 
 	return $?
 }
 
 function set_gw_filter_rules() {
-	iptables -N FARCASTER-FILTER
-	iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
+	${IPT_CMD} -N FARCASTER-FILTER
+	${IPT_CMD} -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --fragment -j DROP
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
 		--ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
 		--ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
 
-	iptables -P INPUT DROP
-	iptables -A INPUT -j FARCASTER-FILTER
-	iptables -A INPUT -i lo -j ACCEPT
-	iptables -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
+	${IPT_CMD} -P INPUT DROP
+	${IPT_CMD} -A INPUT -j FARCASTER-FILTER
+	${IPT_CMD} -A INPUT -i lo -j ACCEPT
+	${IPT_CMD} -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
 
-	iptables -P FORWARD DROP
-	iptables -A FORWARD -j FARCASTER-FILTER
-	iptables -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
+	${IPT_CMD} -P FORWARD DROP
+	${IPT_CMD} -A FORWARD -j FARCASTER-FILTER
+	${IPT_CMD} -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
 }
 
 function set_gw_nat_rules() {
-	iptables -t nat -N FARCASTER-NAT
-	iptables -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
-	iptables -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
-	iptables -t nat -A FARCASTER-NAT -j MASQUERADE
-	iptables -t nat -A POSTROUTING -j FARCASTER-NAT
+	${IPT_CMD} -t nat -N FARCASTER-NAT
+	${IPT_CMD} -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
+	${IPT_CMD} -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
+	${IPT_CMD} -t nat -A FARCASTER-NAT -j MASQUERADE
+	${IPT_CMD} -t nat -A POSTROUTING -j FARCASTER-NAT
 }
 
 start_proxy_maybe() {
@@ -325,7 +336,7 @@ start_proxy_maybe() {
 
 start_userspace_agent() {
 	debug=$1
-	extra=""
+	extra_args=""
 	if [ $debug -eq 1 ]; then
 		extra_args="-d"
 	fi
@@ -350,3 +361,9 @@ function print_log() {
 	sleep 120
 }
 
+# Make sure we can run IPTables
+export IPT_CMD=$(check_iptables)
+if [ -z "${IPT_CMD}" ]; then
+	echo "Could not run IPTables. Make sure the container has the NET_ADMIN capability."
+	exit 1
+fi

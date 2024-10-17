@@ -18,9 +18,15 @@ export HTTPS_PROXY="${HTTPS_PROXY:-}"
 # Use HTTPS_PROXY as a fallback for HTTP_PROXY
 export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY:-}}"
 
-run_mode="${1:-}"
-if [ "${run_mode}" == "--hybrid" ]; then
-  . /farcaster/bin/run-hybrid.sh
+# Determine if this kernel has support for WireGuard
+export RUN_MODE="--kernel"
+if ! ip link add "${WG_TUN_IF}" type wireguard 2>/dev/null; then
+  echo "This kernel does not have WireGuard support. Falling back to userspace mode..."
+  export RUN_MODE="--hybrid"
+fi
+
+if [ "${RUN_MODE}" == "--hybrid" ]; then
+  . "${FARCASTER_PATH}/bin/run-hybrid.sh"
 else
-  . /farcaster/bin/run.sh
+  . "${FARCASTER_PATH}/bin/run.sh"
 fi
