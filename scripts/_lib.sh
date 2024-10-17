@@ -361,9 +361,9 @@ function print_log() {
 	sleep 120
 }
 
-# Make sure we can run IPTables
+# Make sure we can run iptables
 export IPT_CMD=$(check_iptables)
 if [ -z "${IPT_CMD}" ]; then
-	echo "Could not run IPTables. Make sure the container has the NET_ADMIN capability."
+	echo "Could not run iptables. Make sure the container has the NET_ADMIN capability."
 	exit 1
 fi
