@@ -21,7 +21,11 @@ export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY:-}}"
 # Determine if this kernel has support for WireGuard
 export RUN_MODE="--kernel"
 if ! ip link add "${WG_TUN_IF}" type wireguard 2>/dev/null; then
+  echo
+  echo
   echo "This kernel does not have WireGuard support. Falling back to userspace mode..."
+  echo
+  echo
   export RUN_MODE="--hybrid"
 fi
 
