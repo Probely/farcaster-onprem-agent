@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/probely/farcaster-onprem-agent/farcon/services"
+	"github.com/probely/farcaster-onprem-agent/farconn/services"
 	"github.com/spf13/cobra"
 )
 

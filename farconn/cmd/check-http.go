@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/probely/farcaster-onprem-agent/farcon/format"
-	"github.com/probely/farcaster-onprem-agent/farcon/services"
+	"github.com/probely/farcaster-onprem-agent/farconn/format"
+	"github.com/probely/farcaster-onprem-agent/farconn/services"
 	"github.com/spf13/cobra"
 )
 
