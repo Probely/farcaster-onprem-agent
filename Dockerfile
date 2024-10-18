@@ -29,7 +29,7 @@ RUN set -eux \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.22-bullseye AS go_builder
+FROM --platform=$BUILDPLATFORM golang:1.23-bullseye AS go_builder
 COPY ./farconn /build/farconn
 COPY ./farcaster-go /build/farcaster-go
 ARG TARGETARCH

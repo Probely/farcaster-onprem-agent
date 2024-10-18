@@ -27,7 +27,6 @@ wg_setup_iface() {
 	ip link del "${iface}" &&
 	return 0
 
-	create_dev_tun
 	return $?
 }
 
@@ -168,7 +167,6 @@ start_dnsmasq() {
 	rundir=/run/dnsmasq
 	lport=1053
 	mkdir -p ${rundir}
-	chmod 0711 ${rundir}
 	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
 	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	for proto in tcp udp; do

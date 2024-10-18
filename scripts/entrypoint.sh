@@ -14,16 +14,24 @@ export WG_TUN_IF="wg-tunnel"
 export WG_GW_IF="wg-gateway"
 
 export TCP_PROXY_PORT=8080
+export HTTP_PROXY="${HTTP_PROXY:-}"
 export HTTPS_PROXY="${HTTPS_PROXY:-}"
-# Use HTTPS_PROXY as a fallback for HTTP_PROXY
-export HTTP_PROXY="${HTTP_PROXY:-${HTTPS_PROXY:-}}"
+
+if [ -n "${HTTP_PROXY}" ] && [ -z "${HTTPS_PROXY}" ]; then
+  export HTTPS_PROXY="${HTTP_PROXY}"
+fi
+
+if [ -n "${HTTPS_PROXY}" ] && [ -z "${HTTP_PROXY}" ]; then
+  export HTTP_PROXY="${HTTPS_PROXY}"
+fi
 
 # Determine if this kernel has support for WireGuard
 export RUN_MODE="--kernel"
-if ! ip link add "${WG_TUN_IF}" type wireguard 2>/dev/null; then
+if ! { ip link add wg-test type wireguard 2>/dev/null &&
+       ip link del wg-test > /dev/null 2>&1; } then
   echo
   echo
-  echo "This kernel does not have WireGuard support. Falling back to userspace mode..."
+  echo "WireGuard kernel support check failed. Falling back to userspace mode..."
   echo
   echo
   export RUN_MODE="--hybrid"

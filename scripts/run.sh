@@ -32,8 +32,8 @@ DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 # Make sure we can run iptables
 export IPT_CMD=$(check_iptables)
 if [ -z "${IPT_CMD}" ]; then
-	echo "Could not run iptables. Make sure the container has the NET_ADMIN capability."
-	exit 0
+	echo "Could not run iptables. Make sure this container has the NET_ADMIN capability."
+	exit 1
 fi
 
 function download_and_deploy_v2_config() {
@@ -104,7 +104,7 @@ if ! start_proxy_maybe "${TCP_PROXY_PORT}"; then
 	echo "failed"
 	echo
 	echo -n "HTTP_PROXY defined, but could not set traffic redirection rules. "
-	echo "Ensure HTTP_PROXY is correct, and the container has NET_ADMIN capabilities."
+	echo "Ensure HTTP_PROXY is correct and this container has NET_ADMIN capabilities."
 	echo
 	print_log "${LOG_FILE}"
 	exit 1
