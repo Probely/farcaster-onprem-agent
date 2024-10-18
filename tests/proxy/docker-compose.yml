@@ -1,24 +1,22 @@
-version: '3.3'
-
 services:
   gateway:
     build:
-      dockerfile: docker/Dockerfile
+      dockerfile: Dockerfile
       context: ../../
-    container_name: gateway
+      args:
+        - VERSION=0.0.0
     depends_on:
     - proxy
-    command:
+    entrypoint:
     - /bin/bash
     - -c
     - set -eu
       && proxy_ip=$$(dig +short proxy) 
-      && apk add --no-cache curl
       && iptables -t nat -I PREROUTING -p tcp -m multiport --dport 80,443 -j REDIRECT --to-port 1080
       && iptables -t nat -I OUTPUT -p tcp -m multiport --dports 80,443 -j REDIRECT --to-port 1080
-      && { curl ifconfig.me && echo "FAILED" || echo "OK"; }
-      && { moproxy --port 1080 --test-dns 0.0.0.0:53 --http $${proxy_ip}:8888 & }
-      && { sleep 5; curl ifconfig.me && echo "OK" || echo "FAILED"; }
+      && { curl ifconfig.me >/dev/null 2>&1 && echo "FAILED" || echo "OK"; }
+      && { moproxy --port 1080 --test-dns 0.0.0.0:53 --http $${proxy_ip}:8888 > /dev/null 2>&1 & }
+      && { sleep 5; curl ifconfig.me > /dev/null 2>&1 && echo "OK" || echo "FAILED"; sleep 10; }
     cap_drop:
     - ALL
     cap_add:
@@ -31,6 +29,5 @@ services:
 
   proxy:
     image: vimagick/tinyproxy
-    container_name: proxy
     restart: always
 
