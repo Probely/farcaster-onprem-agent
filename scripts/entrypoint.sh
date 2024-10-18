@@ -30,7 +30,7 @@ if ! ip link add "${WG_TUN_IF}" type wireguard 2>/dev/null; then
 fi
 
 if [ "${RUN_MODE}" == "--hybrid" ]; then
-  . "${FARCASTER_PATH}/bin/run-hybrid.sh"
+  exec "${FARCASTER_PATH}"/bin/run-hybrid.sh
 else
-  . "${FARCASTER_PATH}/bin/run.sh"
+  exec "${FARCASTER_PATH}"/bin/run.sh
 fi

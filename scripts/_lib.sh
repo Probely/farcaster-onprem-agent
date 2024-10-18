@@ -10,10 +10,10 @@ INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.
 
 check_iptables() {
 	if iptables-nft -t filter -L >/dev/null 2>&1; then
-		echo $(which iptables-nft)
+		which iptables-nft
 		return 0
 	elif iptables-legacy -t filter -L >/dev/null 2>&1; then
-		echo $(which iptables-legacy)
+		which iptables-legacy
 		return 0
 	fi
 	return 1
@@ -71,7 +71,7 @@ wg_get_latest_handshake() {
 	# the known peers list every 30 seconds. Be sure to **not** make this
 	# value smaller than that.
 	for i in $(seq 90); do
-		handshake=$(wg show ${iface} latest-handshakes | awk -F' ' '{print $2}')
+		handshake=$(wg show "${iface}" latest-handshakes | awk -F' ' '{print $2}')
 		[ "${handshake}" != "0" ] && echo "${handshake}" && return
 		sleep 1
 	done
@@ -80,12 +80,12 @@ wg_get_latest_handshake() {
 
 wg_get_endpoint() {
 	iface="$1"
-	get_addr_from_conf ${iface} "^Endpoint\s*=\s*"
+	get_addr_from_conf "${iface}" "^Endpoint\s*=\s*"
 }
 
 wg_get_addr() {
 	iface="$1"
-	get_addr_from_conf ${iface} "^Address\s*=\s*"
+	get_addr_from_conf "${iface}" "^Address\s*=\s*"
 }
 
 get_addr_from_conf() {
@@ -115,7 +115,7 @@ get_iface_addr() {
 
 resolve_host() {
 	host="$1"
-	echo "$(dig +short ${host} | grep '^[.0-9]*$' | sort)"
+	dig +short "${host}" | grep '^[.0-9]*$' | sort
 	return $?
 }
 
@@ -133,8 +133,8 @@ check_hub_ip() {
 	if is_hub_ip_fresh; then
 		return 0
 	fi
-	host="$(wg_get_endpoint ${iface})"
-	cur_ip="$(resolve_host ${host})"
+	host=$(wg_get_endpoint "${iface}")
+	cur_ip=$(resolve_host "${host}")
 	if [ -z "${HUB_IP}" ]; then
 		HUB_IP="${cur_ip}"
 	elif [ "${cur_ip}" != "$HUB_IP" ]; then
@@ -151,7 +151,7 @@ wg_check_iface() {
 		echo "${iface} interface is down. Exiting..."
 		return 1
 	fi
-	if [ ${check_hub} -ne 0 ] && ! check_hub_ip "${iface}"; then
+	if [ "${check_hub}" -ne 0 ] && ! check_hub_ip "${iface}"; then
 		echo "Farcaster Hub address has changed. Exiting..."
 		return 2
 	fi
@@ -221,10 +221,10 @@ get_proxy_port() {
 
 start_udp_over_tcp_tunnel() {
 	local_udp_port="$1"
-	remote_ip="$(resolve_host $2)"
+	remote_ip=$(resolve_host "$2")
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
-		nohup /usr/local/bin/udp2tcp --tcp-forward ${remote_ip}:${remote_tcp_port} --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
+		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
 	pid=$!
 	sleep 2
 	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
@@ -248,10 +248,10 @@ create_moproxy_config() {
 	ipaddr=$(dig +short "${host}" || echo "")
 	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
 	port=$(get_proxy_port "${address}")
-	auth=$(test ! -z "${user}" && printf "http username = ${user}\nhttp password = ${password}\n" || echo "")
+	auth=$(test ! -z "${user}" && printf "http username = %s\nhttp password = %s\n" "${user}" "${password}" || echo "")
 
 	umask 033
-	cat << EOF > ${config_path}
+	cat << EOF > "${config_path}"
 [default]
 address=${ipaddr}:${port}
 protocol=http
@@ -267,9 +267,9 @@ set_proxy_redirect_rules() {
 	# Proxy redirect chain
 	${IPT_CMD} -t nat -N PROXY-REDIRECT
 	for net in ${INTERNAL_NETS}; do
-		${IPT_CMD} -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
+		${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${net}" -j RETURN
 	done
-	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port "${proxy_port}"
 
 	# Remote traffic arriving in the tunnel
 	${IPT_CMD} -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
@@ -314,21 +314,21 @@ function set_gw_nat_rules() {
 
 start_proxy_maybe() {
 	listen_port="$1"
-	test -z ${HTTP_PROXY:-} && return 0
+	test -z "${HTTP_PROXY:-}" && return 0
 	rundir=/run/moproxy
 	mkdir -p ${rundir}
 	chmod 0711 ${rundir}
 	config_path="${rundir}/config.ini"
-	if ! create_moproxy_config ${config_path} ${listen_port}; then
+	if ! create_moproxy_config ${config_path} "${listen_port}"; then
 		echo "Could not create the moproxy config file" >&2
 		return 1
 	fi
-	if ! set_proxy_redirect_rules ${listen_port}; then
+	if ! set_proxy_redirect_rules "${listen_port}"; then
 		echo "Could not set the proxy redirect rules" >&2
 		return 1
 	fi
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} --allow-direct >/dev/null &
+		nohup /usr/local/bin/moproxy --port "${proxy_port}" --list "${config_path}" --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
@@ -337,7 +337,7 @@ start_proxy_maybe() {
 start_userspace_agent() {
 	debug=$1
 	extra_args=""
-	if [ $debug -eq 1 ]; then
+	if [ "$debug" -eq 1 ]; then
 		extra_args="-d"
 	fi
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd $extra_args
@@ -347,7 +347,7 @@ function print_log() {
 	echo
 	echo
 	echo
-	cat ${1}
+	cat "${1}"
 	echo
 	echo "===================================================================="
 	echo
@@ -360,10 +360,3 @@ function print_log() {
 	echo
 	sleep 120
 }
-
-# Make sure we can run iptables
-export IPT_CMD=$(check_iptables)
-if [ -z "${IPT_CMD}" ]; then
-	echo "Could not run iptables. Make sure the container has the NET_ADMIN capability."
-	exit 1
-fi

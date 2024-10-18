@@ -23,7 +23,7 @@ func TestAgentLifecycle(t *testing.T) {
 		t.Errorf("Failed to connect to agent hub: %v", err)
 	}
 
-	t.Logf("Agent a status: %v", a.State.Status)
+	t.Logf("Agent a status: %v", a.State.Status())
 
 	t.Logf("Disconnecting agent a...")
 	err = a.Down()

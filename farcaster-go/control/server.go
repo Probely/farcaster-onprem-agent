@@ -107,6 +107,6 @@ func (s *Server) handleStatus(args []string) (string, error) {
 		return fmt.Sprintf("status=%s", agent.StatusDisconnected), nil
 	}
 
-	resp := fmt.Sprintf("status=%s", s.agent.State.Status)
+	resp := fmt.Sprintf("status=%s", s.agent.State.Status())
 	return resp, nil
 }
