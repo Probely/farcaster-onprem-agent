@@ -1,0 +1,70 @@
+services:
+  main:
+    build:
+      dockerfile: Dockerfile
+      context: ../../
+      args:
+        - VERSION=0.0.0
+    depends_on:
+      proxy:
+        condition: service_healthy
+      network:
+        condition: service_healthy
+    network_mode: service:network
+    environment:
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - FARCASTER_AGENT_TOKEN
+      - FARCASTER_API_URL=https://api.stg.eu.probely.com
+    command:
+      - ${AGENT_TYPE}
+    cap_drop:
+    - ALL
+    cap_add:
+    - DAC_OVERRIDE
+    - NET_RAW
+    - SETUID
+    - SETGID
+    - KILL
+    - ${NET_ADMIN}
+    restart: "no"
+
+  network:
+    image: ubuntu:noble
+    command:
+      - /bin/bash
+      - -c
+      - set -eu
+        && echo "Setting network parameters..."
+        && apt-get update > /dev/null 2>&1
+        && apt-get install -y iptables > /dev/null 2>&1
+        && { case "${NET_MODE}" in *tcp*)
+              iptables -t filter -I OUTPUT -o eth0 -p udp -m multiport --dports 53,443 -j DROP;
+              echo "UDP blocked";; esac; }
+        && { case "${NET_MODE}" in *proxy*)
+              iptables -t filter -I OUTPUT -o eth0 -p tcp --dport 443 -j DROP;
+              echo "Direct TCP blocked";;
+            esac; }
+        && touch /tmp/healthy
+        && echo "Network parameters set. Please wait for the agent container to start..."
+        && sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/healthy"]
+      interval: 1m30s
+      timeout: 1s
+      retries: 3 
+      start_period: 10s
+    cap_add:
+      - NET_ADMIN
+    restart: "no"
+
+  proxy:
+    image: vimagick/tinyproxy
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "localhost", "8888"]
+      interval: 30m
+      timeout: 30s
+      retries: 5
+      start_period: 10s
+    restart: always
+

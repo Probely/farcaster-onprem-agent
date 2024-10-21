@@ -8,6 +8,17 @@ HUB_IP_TTL=300
 WG_DEFAULT_PORT=51820
 INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16}"
 
+check_iptables() {
+	if iptables-nft -t filter -L >/dev/null 2>&1; then
+		which iptables-nft
+		return 0
+	elif iptables-legacy -t filter -L >/dev/null 2>&1; then
+		which iptables-legacy
+		return 0
+	fi
+	return 1
+}
+
 wg_setup_iface() {
 	iface="$1"
 
@@ -16,7 +27,6 @@ wg_setup_iface() {
 	ip link del "${iface}" &&
 	return 0
 
-	create_dev_tun
 	return $?
 }
 
@@ -60,7 +70,7 @@ wg_get_latest_handshake() {
 	# the known peers list every 30 seconds. Be sure to **not** make this
 	# value smaller than that.
 	for i in $(seq 90); do
-		handshake=$(wg show ${iface} latest-handshakes | awk -F' ' '{print $2}')
+		handshake=$(wg show "${iface}" latest-handshakes | awk -F' ' '{print $2}')
 		[ "${handshake}" != "0" ] && echo "${handshake}" && return
 		sleep 1
 	done
@@ -69,12 +79,12 @@ wg_get_latest_handshake() {
 
 wg_get_endpoint() {
 	iface="$1"
-	get_addr_from_conf ${iface} "^Endpoint\s*=\s*"
+	get_addr_from_conf "${iface}" "^Endpoint\s*=\s*"
 }
 
 wg_get_addr() {
 	iface="$1"
-	get_addr_from_conf ${iface} "^Address\s*=\s*"
+	get_addr_from_conf "${iface}" "^Address\s*=\s*"
 }
 
 get_addr_from_conf() {
@@ -104,7 +114,7 @@ get_iface_addr() {
 
 resolve_host() {
 	host="$1"
-	echo "$(dig +short ${host} | grep '^[.0-9]*$' | sort)"
+	dig +short "${host}" | grep '^[.0-9]*$' | sort
 	return $?
 }
 
@@ -122,8 +132,8 @@ check_hub_ip() {
 	if is_hub_ip_fresh; then
 		return 0
 	fi
-	host="$(wg_get_endpoint ${iface})"
-	cur_ip="$(resolve_host ${host})"
+	host=$(wg_get_endpoint "${iface}")
+	cur_ip=$(resolve_host "${host}")
 	if [ -z "${HUB_IP}" ]; then
 		HUB_IP="${cur_ip}"
 	elif [ "${cur_ip}" != "$HUB_IP" ]; then
@@ -140,7 +150,7 @@ wg_check_iface() {
 		echo "${iface} interface is down. Exiting..."
 		return 1
 	fi
-	if [ ${check_hub} -ne 0 ] && ! check_hub_ip "${iface}"; then
+	if [ "${check_hub}" -ne 0 ] && ! check_hub_ip "${iface}"; then
 		echo "Farcaster Hub address has changed. Exiting..."
 		return 2
 	fi
@@ -157,13 +167,12 @@ start_dnsmasq() {
 	rundir=/run/dnsmasq
 	lport=1053
 	mkdir -p ${rundir}
-	chmod 0711 ${rundir}
 	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
 	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	for proto in tcp udp; do
-		iptables -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
+		${IPT_CMD} -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
 		    --dport 53 -j DNAT --to-destination "${gw_addr}:${lport}"
-		iptables -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
+		${IPT_CMD} -t filter -I INPUT -i "${WG_GW_IF}" -p ${proto} \
 		    -d "${gw_addr}" --dport "${lport}" -j ACCEPT
 	done
 }
@@ -210,13 +219,21 @@ get_proxy_port() {
 
 start_udp_over_tcp_tunnel() {
 	local_udp_port="$1"
-	remote_ip="$(resolve_host $2)"
+	remote_ip=$(resolve_host "$2")
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
-		nohup /usr/local/bin/udp2tcp --tcp-forward ${remote_ip}:${remote_tcp_port} --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
+		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
 	pid=$!
 	sleep 2
 	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
+}
+
+get_first_nameserver() {
+    ns=$(grep -m 1 '^nameserver' /etc/resolv.conf | awk '{print $2}')
+	if [ -z "${ns}" ]; then
+		ns="127.0.0.1"
+	fi
+	echo "${ns}"
 }
 
 create_moproxy_config() {
@@ -229,88 +246,106 @@ create_moproxy_config() {
 	ipaddr=$(dig +short "${host}" || echo "")
 	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
 	port=$(get_proxy_port "${address}")
-	auth=$(test ! -z "${user}" && printf "http username = ${user}\nhttp password = ${password}\n" || echo "")
+	auth=$(test ! -z "${user}" && printf "http username = %s\nhttp password = %s\n" "${user}" "${password}" || echo "")
 
 	umask 033
-	cat << EOF > ${config_path}
+	cat << EOF > "${config_path}"
 [default]
 address=${ipaddr}:${port}
 protocol=http
-test dns=127.0.0.1:53
+test dns=$(get_first_nameserver):53
 ${auth}
 EOF
+
+	return $?
 }
 
 set_proxy_redirect_rules() {
 	proxy_port="$1"
-	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	# Proxy redirect chain
-	iptables -t nat -N PROXY-REDIRECT
+	${IPT_CMD} -t nat -N PROXY-REDIRECT
 	for net in ${INTERNAL_NETS}; do
-		iptables -t nat -A PROXY-REDIRECT -d ${net} -j RETURN
+		${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${net}" -j RETURN
 	done
-	iptables -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port ${proxy_port}
+	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port "${proxy_port}"
 
 	# Remote traffic arriving in the tunnel
-	iptables -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
+	${IPT_CMD} -t nat -A PREROUTING -i "${WG_GW_IF}" -j PROXY-REDIRECT
 
 	# Traffic from the UDP to TCP tunnel. If a proxy is defined, use it
-	iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
-	# iptables -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
+	${IPT_CMD} -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
+	# ${IPT_CMD} -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
-	iptables -t filter -I INPUT -i "${WG_GW_IF}" -p tcp -d "${gw_addr}" --dport "${proxy_port}" -j ACCEPT
+	${IPT_CMD} -t filter -I INPUT -i "${WG_GW_IF}" -p tcp --dport "${proxy_port}" -j ACCEPT
+
+	return $?
 }
 
 function set_gw_filter_rules() {
-	iptables -N FARCASTER-FILTER
-	iptables -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --fragment -j DROP
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
+	${IPT_CMD} -N FARCASTER-FILTER
+	${IPT_CMD} -A FARCASTER-FILTER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --fragment -j DROP
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 3/4 -m conntrack \
 		--ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 4 -m conntrack \
 		--ctstate ESTABLISHED,RELATED -j ACCEPT
-	iptables -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
+	${IPT_CMD} -A FARCASTER-FILTER -p icmp --icmp-type 8 -j ACCEPT
 
-	iptables -P INPUT DROP
-	iptables -A INPUT -j FARCASTER-FILTER
-	iptables -A INPUT -i lo -j ACCEPT
-	iptables -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
+	${IPT_CMD} -P INPUT DROP
+	${IPT_CMD} -A INPUT -j FARCASTER-FILTER
+	${IPT_CMD} -A INPUT -i lo -j ACCEPT
+	${IPT_CMD} -A INPUT -i "${WG_TUN_IF}" -p udp --dport ${WG_DEFAULT_PORT} -j ACCEPT
 
-	iptables -P FORWARD DROP
-	iptables -A FORWARD -j FARCASTER-FILTER
-	iptables -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
+	${IPT_CMD} -P FORWARD DROP
+	${IPT_CMD} -A FORWARD -j FARCASTER-FILTER
+	${IPT_CMD} -A FORWARD -i "${WG_GW_IF}" -j ACCEPT
 }
 
 function set_gw_nat_rules() {
-	iptables -t nat -N FARCASTER-NAT
-	iptables -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
-	iptables -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
-	iptables -t nat -A FARCASTER-NAT -j MASQUERADE
-	iptables -t nat -A POSTROUTING -j FARCASTER-NAT
+	${IPT_CMD} -t nat -N FARCASTER-NAT
+	${IPT_CMD} -t nat -A FARCASTER-NAT -o "${WG_TUN_IF}" -j RETURN
+	${IPT_CMD} -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
+	${IPT_CMD} -t nat -A FARCASTER-NAT -j MASQUERADE
+	${IPT_CMD} -t nat -A POSTROUTING -j FARCASTER-NAT
 }
 
 start_proxy_maybe() {
 	listen_port="$1"
-	test -z ${HTTP_PROXY:-} && return 0
+	test -z "${HTTP_PROXY:-}" && return 0
 	rundir=/run/moproxy
 	mkdir -p ${rundir}
 	chmod 0711 ${rundir}
 	config_path="${rundir}/config.ini"
-	create_moproxy_config ${config_path} ${listen_port}
-	set_proxy_redirect_rules ${listen_port}
+	if ! create_moproxy_config ${config_path} "${listen_port}"; then
+		echo "Could not create the moproxy config file" >&2
+		return 1
+	fi
+	if ! set_proxy_redirect_rules "${listen_port}"; then
+		echo "Could not set the proxy redirect rules" >&2
+		return 1
+	fi
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --port ${proxy_port} --list ${config_path} --allow-direct >/dev/null &
+		nohup /usr/local/bin/moproxy --port "${proxy_port}" --list "${config_path}" --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
+}
+
+start_userspace_agent() {
+	debug=$1
+	extra_args=""
+	if [ "$debug" -eq 1 ]; then
+		extra_args="-d"
+	fi
+	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd $extra_args
 }
 
 function print_log() {
 	echo
 	echo
 	echo
-	cat ${1}
+	cat "${1}"
 	echo
 	echo "===================================================================="
 	echo
@@ -323,4 +358,3 @@ function print_log() {
 	echo
 	sleep 120
 }
-

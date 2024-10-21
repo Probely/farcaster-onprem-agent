@@ -26,7 +26,6 @@ priority: null
 readOnlyRootFilesystem: true
 requiredDropCapabilities:
 - KILL
-- MKNOD
 runAsUser:
   type: RunAsAny
 seLinuxContext:

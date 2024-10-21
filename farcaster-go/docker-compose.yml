@@ -1,0 +1,11 @@
+version: '3.3'
+
+services:
+  agent:
+    image: probely/farcasterd:v3
+    container_name: probely-farcasterd
+    stop_grace_period: 1s
+    environment:
+    - FARCASTER_AGENT_TOKEN
+    - FARCASTER_API_URL
+    restart: unless-stopped
