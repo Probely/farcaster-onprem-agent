@@ -1,11 +1,5 @@
 # Installing the Agent on a Kubernetes Cluster
 
-In this directory, we provide two Kubernetes deployment manifests:
-  * `agent-depl.yaml`: this is the recommended way to use the agent. Use it if your kernel version is >= 5.6
-  * `agent-fallback-depl.yaml`: use this manifest to install the agent on older kernels.
-
-The rest of this document assumes a recent kernel.
-
 1. Go to the [Scanning Agents](https://plus.probely.app/scanning-agents/) page.
    Create an agent and take note of the **agent token**.
 2. Create the `probely` namespace

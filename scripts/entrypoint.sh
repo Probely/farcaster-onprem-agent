@@ -31,7 +31,10 @@ if ! { ip link add wg-test type wireguard 2>/dev/null &&
        ip link del wg-test > /dev/null 2>&1; } then
   echo
   echo
-  echo "WireGuard kernel support check failed. Falling back to userspace mode..."
+  echo "WireGuard kernel support check failed."
+  echo "Make sure you are running Linux >= 5.6 and this container has the NET_ADMIN capability."
+  echo
+  echo "Falling back to userspace mode..."
   echo
   echo
   export RUN_MODE="--hybrid"

@@ -15,7 +15,7 @@ services:
       - HTTP_PROXY
       - HTTPS_PROXY
       - FARCASTER_AGENT_TOKEN
-      - FARCASTER_API_URL=https://api.stg.eu.probely.com
+      - FARCASTER_API_URL=${FARCASTER_API_URL:-https://api.stg.eu.probely.com}
     command:
       - ${AGENT_TYPE}
     cap_drop:
