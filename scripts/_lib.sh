@@ -338,14 +338,26 @@ start_userspace_agent() {
 	if [ "$debug" -eq 1 ]; then
 		extra_args="-d"
 	fi
-	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs /usr/local/bin/farcasterd $extra_args
+	CMD="/usr/local/bin/farcasterd ${extra_args}"
+	# If we're running as root, drop privileges
+	if [ "$(id -u)" -eq 0 ]; then
+		echo "Running as root. Dropping privileges..."
+		CMD="setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs ${CMD}"
+	fi
+	${CMD}
 }
 
 function print_log() {
+	set +e
 	echo
 	echo
 	echo
-	cat "${1}"
+
+	log_file="${1}"
+	if ! [[ "${log_file}" =~ ^/dev/|^/proc/ ]]; then
+		cat "${log_file}"
+	fi
+
 	echo
 	echo "===================================================================="
 	echo

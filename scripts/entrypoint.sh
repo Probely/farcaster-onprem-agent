@@ -41,7 +41,10 @@ if ! { ip link add wg-test type wireguard 2>/dev/null &&
 fi
 
 if [ "${RUN_MODE}" == "--hybrid" ]; then
-  exec "${FARCASTER_PATH}"/bin/run-hybrid.sh
+  "${FARCASTER_PATH}"/bin/run-hybrid.sh
 else
-  exec "${FARCASTER_PATH}"/bin/run.sh
+  if ! "${FARCASTER_PATH}"/bin/run.sh; then
+    echo "Could not start the kernel agent! Trying userspace mode..."
+    "${FARCASTER_PATH}"/bin/run-hybrid.sh
+  fi
 fi

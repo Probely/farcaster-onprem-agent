@@ -2,18 +2,20 @@
 
 set -eu
 
-# Store the original stder
+# Store the original stderr
 exec 3>&2
 # Redirect stderr to the log file
-mkdir -pm 0700 "$(dirname "${LOG_FILE}")"
+if ! mkdir -pm 0700 "$(dirname "${LOG_FILE}")"; then
+	echo "Could not create the log directory! Using /dev/stderr for debug output..."
+	LOG_FILE="/dev/stderr"
+fi
 exec 2>>"${LOG_FILE}"
 # Enable debug (will be printed to the log file)
 set -x
 
 if ! mkdir -pm 0700 "${WORK_DIR}"; then
-	echo "Could not create the work directory!"
-	print_log "{$LOG_FILE}"
-	sleep 60
+	echo "Could not create the work directory ${WORK_DIR}!"
+	echo "Make sure this path is writable by the container user."
 	exit 1
 fi
 
@@ -76,7 +78,17 @@ if [ "${v2_config_success}" != "true" ]; then
 	fi
 fi
 
-HUB_HOST="$(wg_get_endpoint "${WG_TUN_IF}")"
+if [ ! -f "${WORK_DIR}/wg-tunnel.conf" ] || [ ! -f "${WORK_DIR}/wg-gateway.conf" ]; then
+	echo "Could not find the configuration files."
+	print_log "${LOG_FILE}"
+	exit 1
+fi
+
+if ! HUB_HOST="$(wg_get_endpoint "${WG_TUN_IF}")"; then
+	echo "Could not find the hub host"
+	print_log "${LOG_FILE}"
+	exit 1
+fi
 
 function proxy_warning() {
 	if [ "${HTTP_PROXY}" = "" ]; then
