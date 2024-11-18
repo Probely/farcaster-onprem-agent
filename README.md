@@ -80,7 +80,7 @@ Probely's support team.
 ## System checks
 * Before installing the agent container, check that your host can run it:
   ```shell
-  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farcaster/host-check.sh
+  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farconn/host-check.sh
   chmod +x host-check.sh
   ./host-check.sh
   ```
