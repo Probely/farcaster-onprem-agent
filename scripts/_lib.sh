@@ -326,7 +326,7 @@ start_proxy_maybe() {
 		return 1
 	fi
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --port "${proxy_port}" --list "${config_path}" --allow-direct >/dev/null &
+		nohup /usr/local/bin/moproxy --host 0.0.0.0 --port "${proxy_port}" --list "${config_path}" --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
