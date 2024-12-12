@@ -8,7 +8,8 @@ if [ "${FARCASTER_DEBUG:-0}" -ne 0 ]; then
 	set -x
 fi
 
-export IPT_CMD=$(check_iptables)
+IPT_CMD=$(check_iptables)
+export IPT_CMD
 
 if [ -n "${HTTP_PROXY:-}" ]; then
 	if [ -z "${IPT_CMD}" ]; then
@@ -34,9 +35,7 @@ echo -ne "Starting Farcaster Agent\t...\n"
 set +x
 
 # Finally, start the userspace agent
-start_userspace_agent "${FARCASTER_DEBUG:-0}"
-
-if [ $? -ne 0 ]; then
+if ! start_userspace_agent "${FARCASTER_DEBUG:-0}"; then
 	echo "Could not start the userspace agent!"
 	sleep 10
 	exit $?

@@ -203,7 +203,7 @@ get_proxy_address() {
 	sed 's/^.*@//'
 }
 
-get_proxy_host() {
+get_proxy_host_from_address() {
 	echo "$1" |
 	sed -r 's/^http(s)?\:\/\///' |
 	cut -d ':' -f 1
@@ -242,7 +242,7 @@ create_moproxy_config() {
 	user=$(get_proxy_username)
 	password=$(get_proxy_password)
 	address=$(get_proxy_address)
-	host=$(get_proxy_host "${address}")
+	host=$(get_proxy_host_from_address "${address}")
 	ipaddr=$(dig +short "${host}" || echo "")
 	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
 	port=$(get_proxy_port "${address}")
@@ -263,10 +263,16 @@ EOF
 set_proxy_redirect_rules() {
 	proxy_port="$1"
 	# Proxy redirect chain
+	# Do not redirect traffic to internal networks
 	${IPT_CMD} -t nat -N PROXY-REDIRECT
 	for net in ${INTERNAL_NETS}; do
 		${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${net}" -j RETURN
 	done
+	# Do not redirect traffic to the proxy itself
+	proxy_addr=$(get_proxy_address)
+	proxy_host=$(get_proxy_host_from_address "${proxy_addr}")
+	${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${proxy_host}" -j RETURN
+
 	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port "${proxy_port}"
 
 	# Remote traffic arriving in the tunnel
@@ -326,7 +332,7 @@ start_proxy_maybe() {
 		return 1
 	fi
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --host 0.0.0.0 --port "${proxy_port}" --list "${config_path}" --allow-direct >/dev/null &
+		nohup /usr/local/bin/moproxy --host 0.0.0.0 --port "${listen_port}" --list "${config_path}" --allow-direct >/dev/null &
 	sleep 3
 	kill -0 $!
 	return $?
