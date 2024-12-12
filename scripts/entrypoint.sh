@@ -26,7 +26,7 @@ if [ -n "${HTTPS_PROXY}" ] && [ -z "${HTTP_PROXY}" ]; then
 fi
 
 # Determine if this kernel has support for WireGuard
-export RUN_MODE="--kernel"
+export RUN_MODE="${RUN_MODE:---kernel}"
 if ! { ip link add wg-test type wireguard 2>/dev/null &&
        ip link del wg-test > /dev/null 2>&1; } then
   echo
