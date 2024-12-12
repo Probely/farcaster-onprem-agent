@@ -14,10 +14,9 @@ services:
     environment:
       - HTTP_PROXY
       - HTTPS_PROXY
+      - RUN_MODE
       - FARCASTER_AGENT_TOKEN
       - FARCASTER_API_URL=${FARCASTER_API_URL:-https://api.stg.eu.probely.com}
-    command:
-      - ${AGENT_TYPE}
     cap_drop:
     - ALL
     cap_add:
@@ -28,9 +27,12 @@ services:
     - KILL
     - ${NET_ADMIN}
     restart: "no"
+    stop_grace_period: 1s
 
   network:
     image: ubuntu:noble
+    environment:
+      - NET_MODE
     command:
       - /bin/bash
       - -c
@@ -57,6 +59,7 @@ services:
     cap_add:
       - NET_ADMIN
     restart: "no"
+    stop_grace_period: 1s
 
   proxy:
     image: vimagick/tinyproxy
@@ -67,4 +70,5 @@ services:
       retries: 5
       start_period: 10s
     restart: always
+    stop_grace_period: 1s
 
