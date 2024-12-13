@@ -54,6 +54,8 @@ COPY --from=go_builder /build/farconn/farconn /usr/local/bin
 COPY --from=go_builder /build/farcaster-go/bin/farcasterd /usr/local/bin
 COPY --from=rust_builder /moproxy/target/release/moproxy /usr/local/bin
 COPY --from=rust_builder /udp-over-tcp/target/release/udp2tcp /usr/local/bin
+ARG VERSION
+ENV FARCASTER_VERSION=${VERSION}
 RUN set -eux \
     && umask 077 \
     && apt-get update -y \
