@@ -60,7 +60,7 @@ It is used, for example, to detect "Log4Shell"-type vulnerabilities.
 
 The agent runs on a Docker container. It should work on any system with a Docker installation.
 
-The agent needs an API token to connect to Probely's network.
+The agent needs a token to connect to Probely's network.
 
 > If you do not have an agent token, you can create one in the
 > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.

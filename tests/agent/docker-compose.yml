@@ -1,5 +1,5 @@
 services:
-  main:
+  farcaster:
     build:
       dockerfile: Dockerfile
       context: ../../
@@ -10,22 +10,20 @@ services:
         condition: service_healthy
       network:
         condition: service_healthy
-    network_mode: service:network
+      tcpdump:
+        condition: service_healthy
+    network_mode: service:tcpdump
     environment:
       - HTTP_PROXY
       - HTTPS_PROXY
       - RUN_MODE
+      - FARCASTER_DEBUG_LEVEL
       - FARCASTER_AGENT_TOKEN
-      - FARCASTER_API_URL=${FARCASTER_API_URL:-https://api.stg.eu.probely.com}
-    cap_drop:
-    - ALL
+      - FARCASTER_API_URL
     cap_add:
-    - DAC_OVERRIDE
-    - NET_RAW
-    - SETUID
-    - SETGID
-    - KILL
     - ${NET_ADMIN}
+    volumes:
+    - shared-logs:/logs
     restart: "no"
     stop_grace_period: 1s
 
@@ -54,8 +52,12 @@ services:
       test: ["CMD", "test", "-f", "/tmp/healthy"]
       interval: 1m30s
       timeout: 1s
-      retries: 3 
+      retries: 3
       start_period: 10s
+    depends_on:
+      tcpdump:
+        condition: service_healthy
+    network_mode: service:tcpdump
     cap_add:
       - NET_ADMIN
     restart: "no"
@@ -72,3 +74,36 @@ services:
     restart: always
     stop_grace_period: 1s
 
+  tcp_proxy:
+    image: ubuntu:noble
+    volumes:
+      - shared-logs:/logs
+    command:
+    - /bin/bash
+    - -c
+    - rm -rf /logs/moproxy
+      && mkdir /logs/moproxy
+      && chmod 1777 /logs/moproxy
+      && while true; do
+          test -f /logs/moproxy/moproxy.log && tail -F /logs/moproxy/moproxy.log || sleep 1;
+        done
+    restart: always
+    stop_grace_period: 1s
+
+  tcpdump:
+    image: alpine
+    healthcheck:
+      test: ["CMD", "pidof", "tcpdump"]
+      interval: 10s
+      timeout: 1s
+      retries: 3
+    command:
+    - /bin/ash
+    - -c
+    - apk add --no-cache tcpdump > /dev/null 2>&1
+      && tcpdump -s0 -n -i eth0
+    restart: always
+    stop_grace_period: 1s
+
+volumes:
+  shared-logs:

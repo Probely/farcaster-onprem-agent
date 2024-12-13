@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+echo "Starting Farcaster agent v${FARCASTER_VERSION}..."
+
 set -eu
 
 umask 007

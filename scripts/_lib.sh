@@ -4,6 +4,7 @@ set -euo pipefail
 
 PROXY_REGEXP='^(http(s)?://)?(([0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+)@)?([0-9a-zA-Z._-]+)(:([0-9]+))?$'
 WORKDIR=/run/farcaster
+LOGDIR=/logs
 HUB_IP_TTL=300
 WG_DEFAULT_PORT=51820
 INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16}"
@@ -229,6 +230,8 @@ start_udp_over_tcp_tunnel() {
 }
 
 get_first_nameserver() {
+	echo "1.1.1.1"
+	return 0
     ns=$(grep -m 1 '^nameserver' /etc/resolv.conf | awk '{print $2}')
 	if [ -z "${ns}" ]; then
 		ns="127.0.0.1"
@@ -331,17 +334,25 @@ start_proxy_maybe() {
 		echo "Could not set the proxy redirect rules" >&2
 		return 1
 	fi
+
+	log_level="info"
+	log_file="/dev/null"
+	if [ "$(debug_level)" -gt 0 ] && [ -d "${LOGDIR}" ]; then
+		log_level="trace"
+		log_file="${LOGDIR}/moproxy/moproxy.log"
+	fi
+
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --host 0.0.0.0 --port "${listen_port}" --list "${config_path}" --allow-direct >/dev/null &
+		nohup /usr/local/bin/moproxy --log-level "${log_level}" --host 0.0.0.0 --port "${listen_port}" \
+		--list "${config_path}" --allow-direct >"${log_file}" &
 	sleep 3
 	kill -0 $!
 	return $?
 }
 
 start_userspace_agent() {
-	debug=$1
 	extra_args=""
-	if [ "$debug" -eq 1 ]; then
+	if [ "$(debug_level)" -gt 1 ]; then
 		extra_args="-d"
 	fi
 	CMD="/usr/local/bin/farcasterd ${extra_args}"
@@ -375,4 +386,26 @@ function print_log() {
 	echo "===================================================================="
 	echo
 	sleep 120
+}
+
+function print_diagnostics() {
+	echo
+	echo
+	echo "-----addresses-----"
+	ip addr show
+	echo
+	echo "-----routes-----"
+	ip route show
+	echo
+	echo "-----iptables-----"
+	${IPT_CMD} -t filter -n -L -v
+	${IPT_CMD} -t nat -n -L -v
+	echo
+	echo "-----moproxy config-----"
+	cat /run/moproxy/config.ini || echo "No moproxy config found"
+	echo
+}
+
+function debug_level() {
+	echo "${FARCASTER_DEBUG_LEVEL:-0}"
 }

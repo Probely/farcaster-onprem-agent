@@ -4,7 +4,8 @@ set -eu
 
 . "${FARCASTER_PATH}"/bin/_lib.sh
 
-if [ "${FARCASTER_DEBUG:-0}" -ne 0 ]; then
+if [ "$(debug_level)" -gt 0 ]; then
+	echo "Debugging enabled"
 	set -x
 fi
 
@@ -32,10 +33,12 @@ echo "done"
 
 echo -ne "Starting Farcaster Agent\t...\n"
 
-set +x
+if [ "$(debug_level)" -gt 0 ]; then
+	print_diagnostics
+fi
 
 # Finally, start the userspace agent
-if ! start_userspace_agent "${FARCASTER_DEBUG:-0}"; then
+if ! start_userspace_agent; then
 	echo "Could not start the userspace agent!"
 	sleep 10
 	exit $?
