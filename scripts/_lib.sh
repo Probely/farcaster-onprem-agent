@@ -322,6 +322,7 @@ function set_gw_nat_rules() {
 start_proxy_maybe() {
 	listen_port="$1"
 	test -z "${HTTP_PROXY:-}" && return 0
+	proxy_port="${listen_port}"
 	rundir=/run/moproxy
 	mkdir -p ${rundir}
 	chmod 0711 ${rundir}
@@ -343,8 +344,8 @@ start_proxy_maybe() {
 	fi
 
 	setpriv --reuid=proxy --regid=proxy --clear-groups --no-new-privs \
-		nohup /usr/local/bin/moproxy --log-level "${log_level}" --host 0.0.0.0 --port "${listen_port}" \
-		--list "${config_path}" --allow-direct >"${log_file}" &
+		nohup /usr/local/bin/moproxy --log-level "${log_level}" --host 0.0.0.0 \
+		--port "${listen_port}" --list "${config_path}" --allow-direct >"${log_file}" &
 	sleep 3
 	kill -0 $!
 	return $?
@@ -408,4 +409,8 @@ function print_diagnostics() {
 
 function debug_level() {
 	echo "${FARCASTER_DEBUG_LEVEL:-0}"
+}
+
+is_moproxy_running() {
+    pidof moproxy >/dev/null 2>&1
 }

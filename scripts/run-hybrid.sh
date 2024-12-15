@@ -12,7 +12,8 @@ fi
 IPT_CMD=$(check_iptables)
 export IPT_CMD
 
-if [ -n "${HTTP_PROXY:-}" ]; then
+
+if [ -n "${HTTP_PROXY:-}" ] && ! is_moproxy_running; then
 	if [ -z "${IPT_CMD}" ]; then
 		echo -n "HTTP_PROXY is defined, but could not set traffic redirection rules. "
 		echo "Make sure the container has the NET_ADMIN capability."
