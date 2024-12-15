@@ -183,8 +183,7 @@ func waitForTermination() {
 }
 
 func watchMemoryUsage(log *zap.SugaredLogger) {
-	// Create a timer to run every 60 seconds.
-	t := time.NewTicker(60 * time.Second)
+	t := time.NewTicker(30 * time.Minute)
 	defer t.Stop()
 
 	for range t.C {
