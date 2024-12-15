@@ -20,56 +20,61 @@ import (
 )
 
 const (
-	// The number of times the agent will try to connect to the agent hub.
-	// It starts by connecting to UDP 443. If it fails, it tries 53 UDP.
-	// The total number of connection attempts is 2 * maxConnTries.
 	maxConnTries = 3
 
 	// Environment variable name for the API (old name) and AGENT tokens.
 	envOldTokenName = "FARCASTER_API_TOKEN"
 	envTokenName    = "FARCASTER_AGENT_TOKEN"
+	envAPIURLName   = "FARCASTER_API_URL"
 )
 
-var (
+type agentConfig struct {
 	token      string
+	apiURLs    []string
 	checkToken bool
 	controlAPI string
 	group      string
 	showVers   bool
 	logPath    string
 	debug      bool
+	apiURL     string
+}
+
+var (
+	appCfg agentConfig
+
+	defaultAPIURLs = []string{
+		"https://api.eu.probely.com",
+		"https://api.us.probely.com",
+		"https://api.au.probely.com",
+	}
 )
+
+func parseConfig(cfg *agentConfig) error {
+	token := getToken(cfg.token)
+	// If the control API is enabled, we don't need a token.
+	if cfg.controlAPI == "" && token == "" {
+		return fmt.Errorf("error: --token argument or %s environment variable is required", envTokenName)
+	}
+	cfg.token = strings.TrimSpace(token)
+	cfg.apiURLs = append(cfg.apiURLs, getAPIURLs(cfg.apiURL)...)
+	return nil
+}
 
 var rootCmd = &cobra.Command{
 	Use:   filepath.Base(os.Args[0]),
-	Short: "The Farcaster connects your network to Probely",
+	Short: settings.Name + " creates a VPN to Probely",
 	Run: func(cmd *cobra.Command, args []string) {
-		if showVers {
+		if appCfg.showVers {
 			fmt.Fprintf(os.Stderr, "%s version %s on %s %s\n",
 				settings.Name, settings.Version, runtime.GOOS, runtime.GOARCH)
 			os.Exit(0)
 		}
-
-		// If the control API is enabled, we don't need a token.
-		if controlAPI == "" && token == "" {
-			// Check if the token is set in the environment.
-			envToken := os.Getenv(envTokenName)
-			if envToken == "" {
-				envToken = os.Getenv(envOldTokenName)
-				if envToken != "" {
-					fmt.Fprintf(os.Stderr, "warning: %s environment variable is deprecated, use %s instead\n",
-						envOldTokenName, envTokenName)
-				}
-			}
-			if envToken == "" && controlAPI == "" {
-				errMsg := "error: --token argument or " + envTokenName + " environment variable is required"
-				fmt.Fprintln(os.Stderr, errMsg)
-				os.Exit(1)
-			}
-			token = strings.TrimSpace(envToken)
+		if err := parseConfig(&appCfg); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
 		}
-
-		runAgent(token)
+		runAgent(appCfg)
 	},
 }
 
@@ -80,16 +85,17 @@ func init() {
 	} else {
 		apiListener = "Unix socket"
 	}
-	rootCmd.PersistentFlags().StringVarP(&token, "token", "t", "", "Authentication token. Can either be the path to the token file, or the token itself")
-	rootCmd.PersistentFlags().BoolVarP(&checkToken, "check-token", "", false, "Check if the token is valid and exit")
-	rootCmd.PersistentFlags().StringVarP(&controlAPI, "control", "", "", "Enable the control API on the "+apiListener)
-	rootCmd.PersistentFlags().StringVarP(&group, "group", "", "", "Group to grant access to the control API")
-	rootCmd.PersistentFlags().BoolVarP(&showVers, "version", "v", false, "Print the version and exit")
-	rootCmd.PersistentFlags().StringVarP(&logPath, "log", "l", "", "Log file path. Log to stderr if not specified")
-	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
+	rootCmd.PersistentFlags().StringVarP(&appCfg.token, "token", "t", "", "Authentication token. Can either be the path to the token file, or the token itself")
+	rootCmd.PersistentFlags().StringVarP(&appCfg.apiURL, "api-url", "", "", "Override the default API URL")
+	rootCmd.PersistentFlags().BoolVarP(&appCfg.checkToken, "check-token", "", false, "Check if the token is valid and exit")
+	rootCmd.PersistentFlags().StringVarP(&appCfg.controlAPI, "control", "", "", "Enable the control API on the "+apiListener)
+	rootCmd.PersistentFlags().StringVarP(&appCfg.group, "group", "", "", "Group to grant access to the control API")
+	rootCmd.PersistentFlags().BoolVarP(&appCfg.showVers, "version", "v", false, "Print the version and exit")
+	rootCmd.PersistentFlags().StringVarP(&appCfg.logPath, "log", "l", "", "Log file path. Log to stderr if not specified")
+	rootCmd.PersistentFlags().BoolVarP(&appCfg.debug, "debug", "d", false, "Enable debug logging")
 }
 
-// Execute runs the Farcaster agent.
+// Execute runs the agent.
 func Execute() {
 	// Send all output to stderr.
 	rootCmd.SetOut(os.Stderr)
@@ -100,10 +106,13 @@ func Execute() {
 	}
 }
 
-// This is the main function of the agent.
-func runAgent(token string) {
-	// New logger.
-	logger := initLogger(debug, logPath)
+// Main agent function.
+func runAgent(cfg agentConfig) {
+	logger, e := initLogger(cfg.debug, cfg.logPath)
+	if e != nil {
+		fmt.Fprintln(os.Stderr, "Error:", e)
+		os.Exit(1)
+	}
 
 	exit := func(code int) {
 		_ = logger.Sync()
@@ -114,8 +123,8 @@ func runAgent(token string) {
 	// glog.SetLevel(glog.Debug)
 
 	// If the --check-token flag is set, we just check if the token is valid.
-	if checkToken {
-		a := agent.New(token, logger)
+	if cfg.checkToken {
+		a := agent.New(cfg.token, cfg.apiURLs, logger)
 		if err := a.CheckToken(); err != nil {
 			logger.Errorf("Token validation failed: %v", err)
 			exit(1)
@@ -124,13 +133,9 @@ func runAgent(token string) {
 		exit(0)
 	}
 
-	// If running as a Windows service, we need a path to the named pipe.
-	if isWindowsService() {
-		if controlAPI == "" {
-			logger.Error("error: --control argument is required when running as a service")
-			exit(1)
-		}
-		s, err := control.NewServer(controlAPI, group, logger)
+	// The agent can run as a service. Clients use the "Control API" to manage it.
+	if cfg.controlAPI != "" {
+		s, err := control.NewServer(cfg.controlAPI, cfg.group, logger)
 		if err != nil {
 			logger.Errorf("Could not start control API: %v", err)
 			exit(1)
@@ -143,32 +148,36 @@ func runAgent(token string) {
 		exit(0)
 	}
 
-	// Run in the foreground.
-	a := agent.New(token, logger)
-	err := a.Up()
-	if err != nil {
-		logger.Errorf("Failed to start agent: %v", err)
-		exit(1)
+	startAgent := func() error {
+		a := agent.New(cfg.token, cfg.apiURLs, logger)
+		if err := a.ConnectWait(maxConnTries); err != nil {
+			a.Close()
+			return err
+		}
+		return nil
 	}
 
-	// Wait for the agent to connect to the agent hub.
-	err = a.WaitForConnection(maxConnTries)
-	if err != nil {
-		logger.Errorf("Failed to connect to agent hub: %v", err)
-		exit(1)
+	// Start the agent as a Windows service.
+	if isWindowsService() {
+		if err := runWindowsService(settings.Name, startAgent, logger); err != nil {
+			logger.Errorf("Agent failed: %v", err)
+			exit(1)
+		}
+		exit(0)
 	}
 
+	// Start the agent as a foreground process.
+	if err := startAgent(); err != nil {
+		logger.Errorf("Agent failed: %v", err)
+		exit(1)
+	}
 	logger.Info("Agent successfully started")
 
-	// Watch memory usage.
 	go watchMemoryUsage(logger)
-
-	// Wait for termination signals.
 	waitForTermination()
 
-	// Cleanups.
 	logger.Info("Shutting down...")
-	_ = logger.Sync()
+	exit(0)
 }
 
 func waitForTermination() {
@@ -183,11 +192,33 @@ func waitForTermination() {
 }
 
 func watchMemoryUsage(log *zap.SugaredLogger) {
-	// Create a timer to run every 60 seconds.
-	t := time.NewTicker(60 * time.Second)
+	t := time.NewTicker(30 * time.Minute)
 	defer t.Stop()
 
 	for range t.C {
 		log.Info(system.GetMemStats())
 	}
+}
+
+func getToken(token string) string {
+	if token != "" {
+		return token
+	}
+	envToken := os.Getenv(envTokenName)
+	if envToken != "" {
+		return envToken
+	}
+	return os.Getenv(envOldTokenName)
+}
+
+func getAPIURLs(apiURL string) []string {
+	if apiURL != "" {
+		return []string{apiURL}
+	}
+	envURL := os.Getenv(envAPIURLName)
+	if envURL != "" {
+		envURL = strings.Trim(envURL, "\"' ")
+		return []string{envURL}
+	}
+	return defaultAPIURLs
 }

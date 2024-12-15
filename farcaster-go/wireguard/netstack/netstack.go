@@ -3,11 +3,14 @@ package netstack
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -146,25 +149,56 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger) (*netstack, 
 
 func (ns *netstack) Close() {
 	ns.once.Do(func() {
+		// First cancel the context to signal all goroutines to stop
 		ns.cancel()
-		ns.stack.RemoveNIC(nicID)
-		ns.ep.Close()
+
+		// Define a helper to log errors but continue cleanup
+		logAndContinue := func(op string, f func()) {
+			defer func() {
+				if r := recover(); r != nil {
+					ns.log.Warnf("Panic during %s in Close(): %v", op, r)
+				}
+			}()
+			f()
+		}
+
+		// Execute cleanup operations, continuing even if some fail
+		logAndContinue("RemoveNIC", func() { ns.stack.RemoveNIC(nicID) })
+		logAndContinue("Close endpoint", func() { ns.ep.Close() })
+
+		// Wait a short time for goroutines to clean up
+		time.Sleep(100 * time.Millisecond)
+
+		select {
+		case <-ns.inbound:
+			// Drained one message
+		default:
+			// Channel empty
+		}
 	})
 }
 
 // WriteNotify is called by netstack when a packet is received from a WireGuard peer.
+// It attempts to enqueue the packet for processing. If the channel is full, the packet is dropped.
 func (ns *netstack) WriteNotify() {
 	select {
 	case <-ns.ctx.Done():
 		return
 	default:
 		pkt := ns.ep.Read()
-		if pkt.IsNil() {
+		if pkt == nil {
 			return
 		}
 		view := pkt.ToView()
 		pkt.DecRef()
-		ns.inbound <- view
+
+		// Use non-blocking send to avoid blocking if the channel is full.
+		select {
+		case ns.inbound <- view:
+		default:
+			ns.log.Debug("Dropping packet: inbound channel full")
+			view.Release()
+		}
 	}
 }
 
@@ -175,7 +209,7 @@ func (ns *netstack) ReadPackets() {
 			return
 		default:
 			pkt := ns.ep.ReadContext(ns.ctx)
-			if pkt.IsNil() {
+			if pkt == nil {
 				return
 			}
 			view := pkt.ToView()
@@ -224,70 +258,166 @@ func (ns *netstack) forwardTCP(fwd *netstackTCPFwd) {
 	// Try to connect to the server (upstream) first.
 	upstream, err := fwd.ConnectUpstream(keepaliveInterval, keepaliveCount)
 	if err != nil {
-		ns.log.Warnf("Upstream connection failed: %s", err)
+		ns.logConnectionError(err, "Upstream connection failed")
 		return
 	}
 	downstream, err := fwd.ConnectDownstream(keepaliveInterval, keepaliveCount)
 	if err != nil {
-		ns.log.Warnf("Downstream connection failed: %s", err)
+		ns.logConnectionError(err, "Downstream connection failed")
 		return
 	}
 
 	// Forward packets.
 	teardown := make(chan error, 2)
-	go proxyTCP(downstream, upstream, teardown)
-	go proxyTCP(upstream, downstream, teardown)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// Wait for the connections to close.
+	go func() {
+		proxyTCPWithCleanup(downstream, upstream, teardown)
+		wg.Done()
+	}()
+
+	go func() {
+		proxyTCPWithCleanup(upstream, downstream, teardown)
+		wg.Done()
+	}()
+
+	// Handle the first error
 	err = <-teardown
 	if err != nil {
-		ns.log.Warnf("Stopped TCP proxy for connection: %v", err)
+		ns.logConnectionError(err, "TCP connection closed")
+	}
+
+	// Close both connections to unblock any stuck goroutines
+	if upstream != nil {
+		upstream.Close()
+	}
+	if downstream != nil {
+		downstream.Close()
+	}
+
+	// Wait for both goroutines to finish
+	wg.Wait()
+
+	// Drain any remaining error from the channel
+	select {
+	case err = <-teardown:
+		if err != nil {
+			ns.logConnectionError(err, "TCP connection closed")
+		}
+	default:
+		// No second error
 	}
 }
 
+// proxyTCPWithCleanup handles one direction of a TCP connection, copying data from src to dst.
+// When the copy completes (either successfully or with an error), it attempts to send the result
+// to the teardown channel to notify the parent goroutine. If the channel is full or closed, it
+// simply continues without blocking, as the main goroutine may have already started cleaning up.
+func proxyTCPWithCleanup(src, dst net.Conn, teardown chan error) {
+	err := proxyTCP(src, dst)
+	select {
+	case teardown <- err:
+		// Error sent successfully
+	default:
+		// Channel is full or closed, continue without blocking
+	}
+}
+
+// proxyTCP performs the actual data copying between two connections.
+// It's a simple wrapper around io.Copy that returns any encountered error.
+// This is extracted as a separate function to centralize the copying logic.
+func proxyTCP(src, dst net.Conn) error {
+	_, err := io.Copy(dst, src)
+	return err
+}
+
 func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
-	// Create a new UDP forwarder ASAP. Do not run any other code before this.
+	// Create a new UDP forwarder ASAP with a mutex to prevent races
+	var fwdMutex sync.Mutex
+	fwdMutex.Lock() // Lock while creating forwarder
+	defer fwdMutex.Unlock()
+
+	// Create forwarder before accepting any packets
 	fwd, err := newNetstackUDPFwd(ns.stack, r, keepaliveInterval, ns.log)
 	if err != nil {
 		ns.log.Debug("Failed creating UDP forwarder:", err)
 		return
 	}
+
 	// Get the connection request.
 	cr := r.ID()
 
 	if cr.LocalPort == 53 {
-		go ns.handleDNSUDP(fwd)
+		go func() {
+			fwdMutex.Unlock() // Unlock before handling
+			ns.handleDNSUDP(fwd)
+		}()
 		return
 	}
 
 	// Forward the connection.
-	go ns.forwardUDP(fwd)
+	go func() {
+		fwdMutex.Unlock() // Unlock before forwarding
+		ns.forwardUDP(fwd)
+	}()
 }
 
 func (ns *netstack) forwardUDP(fwd *netstackUDPFwd) {
-	// Cleanup will close the connections.
+	// Ensure all resources are released even if forwarding fails.
 	defer fwd.Cleanup()
 
 	upstream, err := fwd.ConnectUpstream()
 	if err != nil {
-		ns.log.Warnf("Upstream connection failed: %s", err)
+		ns.logConnectionError(err, "Upstream connection failed")
 		return
 	}
 	downstream, err := fwd.ConnectDownstream()
 	if err != nil {
-		ns.log.Warnf("Downstream connection failed: %s", err)
+		ns.logConnectionError(err, "Downstream connection failed")
 		return
 	}
 
-	// Forward packets.
+	// Start bidirectional forwarding between upstream and downstream.
 	teardown := make(chan error, 2)
-	go proxyUDP(downstream, upstream, teardown, fwd.KeepAlive())
-	go proxyUDP(upstream, downstream, teardown, fwd.KeepAlive())
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// Wait for the connections to close.
+	go func() {
+		proxyUDP(downstream, upstream, teardown, fwd.KeepAlive())
+		wg.Done()
+	}()
+
+	go func() {
+		proxyUDP(upstream, downstream, teardown, fwd.KeepAlive())
+		wg.Done()
+	}()
+
+	// Wait for the first error or timeout from either direction.
 	err = <-teardown
 	if err != nil {
-		ns.log.Warnf("Stopped UDP proxy for connection: %s", err)
+		ns.logConnectionError(err, "Stopped UDP proxy for connection")
+	}
+
+	// Close both connections to unblock any stuck goroutines
+	if upstream != nil {
+		upstream.Close()
+	}
+	if downstream != nil {
+		downstream.Close()
+	}
+
+	// Wait for both goroutines to finish
+	wg.Wait()
+
+	// Drain any remaining error from the channel
+	select {
+	case err = <-teardown:
+		if err != nil {
+			ns.logConnectionError(err, "UDP connection closed")
+		}
+	default:
+		// No second error
 	}
 }
 
@@ -347,42 +477,75 @@ func (ns *netstack) handleDNSTCP(fwd *netstackTCPFwd) {
 	}
 
 	// Read multiple DNS requests from the same TCP connection.
-	readTimeout := 1000 * time.Millisecond
+	readTimeout := 5 * time.Second // Increase the timeout for better reliability
 
-	// XXX: determine the correct value. It should be 64 KB, even though it can
-	// be implementation-specific.
-	maxTCPDNSReplySize := 4096
+	// Use the standard maximum DNS message size over TCP (65,535 bytes)
+	maxTCPDNSReplySize := 65535
 	q := make([]byte, maxTCPDNSReplySize)
+
 	for {
-		downstream.SetReadDeadline(time.Now().Add(readTimeout))
+		// Set deadline for reading the length
+		if err := downstream.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			ns.log.Debug("Failed to set read deadline:", err)
+			return
+		}
+
 		// Read the length of the DNS request.
 		var length uint16
 		err := binary.Read(downstream, binary.BigEndian, &length)
 		if err != nil {
 			// Ignore timeout errors.
-			if err, ok := err.(net.Error); ok && !err.Timeout() {
-				ns.log.Debug("Could not read DNS query length:", err)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Just a timeout, try again
+				continue
 			}
+			ns.log.Debug("Could not read DNS query length:", err)
 			return
 		}
+
+		// Validate length to prevent buffer overflows
+		if length == 0 || int(length) > maxTCPDNSReplySize {
+			ns.log.Debug("Invalid DNS query length:", length)
+			return
+		}
+
+		// Set a fresh deadline for reading the actual query
+		if err := downstream.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			ns.log.Debug("Failed to set read deadline for query:", err)
+			return
+		}
+
 		// Read the DNS request.
 		_, err = io.ReadFull(downstream, q[:length])
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Timeout reading the query body, try again from the start
+				continue
+			}
 			ns.log.Debug("Could not read DNS query:", err)
 			return
 		}
+
 		// Do the DNS query.
 		r, err := ns.resolver.Query(q[:length], "tcp")
 		if err != nil {
 			ns.log.Debug("Could not forward DNS query:", err)
 			return
 		}
+
+		// Set write deadline
+		if err := downstream.SetWriteDeadline(time.Now().Add(readTimeout)); err != nil {
+			ns.log.Debug("Failed to set write deadline:", err)
+			return
+		}
+
 		// Write the length of the DNS response.
 		err = binary.Write(downstream, binary.BigEndian, uint16(len(r)))
 		if err != nil {
 			ns.log.Debug("Failed writing DNS response length:", err)
 			return
 		}
+
 		// Write the DNS response.
 		_, err = downstream.Write(r)
 		if err != nil {
@@ -395,4 +558,24 @@ func (ns *netstack) handleDNSTCP(fwd *netstackTCPFwd) {
 // Parse a netstack IPv4 address and return a netip.Addr.
 func parseIPv4(addr tcpip.Address) netip.Addr {
 	return netip.AddrFrom4(addr.As4())
+}
+
+func isCommonNetworkError(err error) bool {
+	var netErr net.Error
+	if err == nil {
+		return true
+	}
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		(errors.As(err, &netErr) && netErr.Timeout()) ||
+		strings.Contains(err.Error(), "connection reset by peer")
+}
+
+func (ns *netstack) logConnectionError(err error, msg string) {
+	if isCommonNetworkError(err) {
+		ns.log.Debugf("%s: %v", msg, err)
+		return
+	}
+	ns.log.Warnf("%s: %v", msg, err)
 }

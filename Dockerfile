@@ -6,6 +6,7 @@ RUN set -eux \
     && { [ "${TARGETARCH}" = "arm64" ] && TARGETARCH="aarch64" || TARGETARCH="x86-64"; } \
     && RUST_TARGET="$(echo $TARGETARCH | tr '-' '_')" \
     && apt-get update -y \
+    && apt-get dist-upgrade -y \
     && apt-get install -y git libc-dev gcc-${TARGETARCH}-linux-gnu binutils-${TARGETARCH}-linux-gnu \
     # moproxy \
     && git clone https://github.com/sorz/moproxy \
@@ -29,7 +30,7 @@ RUN set -eux \
     && cp target/${RUST_TARGET}-unknown-linux-gnu/release/udp2tcp target/release
 
 
-FROM --platform=$BUILDPLATFORM golang:1.23-bullseye AS go_builder
+FROM --platform=$BUILDPLATFORM golang:1.24-bullseye AS go_builder
 COPY ./farconn /build/farconn
 COPY ./farcaster-go /build/farcaster-go
 ARG TARGETARCH
@@ -38,6 +39,7 @@ RUN set -eux \
     && mkdir -p /build \
     && cd /build \
     && apt-get update -y \
+    && apt-get dist-upgrade -y \
     && apt-get install -y git libc-dev gcc libmnl-dev iptables \
     \
     && cd farconn \
@@ -59,6 +61,7 @@ ENV FARCASTER_VERSION=${VERSION}
 RUN set -eux \
     && umask 077 \
     && apt-get update -y \
+    && apt-get dist-upgrade -y \
     && apt-get install -y --no-install-suggests --no-install-recommends \
        bash \
        libmnl0 \

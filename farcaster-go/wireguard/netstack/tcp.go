@@ -3,9 +3,9 @@ package netstack
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -14,8 +14,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// Forwarder request wrapper to abstract away the details of the setting up
-// a Netstack TCP connection.
+// Forwarder request wrapper to abstract away the details of setting up
+// a Netstack TCP connection and proxying it to an upstream server.
 type netstackTCPFwd struct {
 	fr *tcp.ForwarderRequest
 	ep tcpip.Endpoint
@@ -26,85 +26,107 @@ type netstackTCPFwd struct {
 	ctx    *context.Context
 	cancel context.CancelFunc
 
-	done             chan struct{}
+	// Ensures Cleanup is only executed once, even if called from multiple goroutines.
+	cleanupOnce sync.Once
+
+	// Closed when Cleanup is called, used to signal shutdown to background goroutines.
+	done chan struct{}
+
+	// Triggered when the downstream (netstack) connection is closed.
+	// Used to cancel the upstream connection.
 	downstreamClosed chan struct{}
 
-	upstream   *net.TCPConn
-	downstream *gonet.TCPConn
+	upstream   *net.TCPConn   // Connection to the upstream server.
+	downstream *gonet.TCPConn // Connection to the local netstack client.
 }
 
 func newNetstackTCPFwd(fr *tcp.ForwarderRequest) *netstackTCPFwd {
-	// Context for the upstream connection.
+	// Create a cancellable context for managing upstream connection lifetime.
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Get close notifications for the downstream connection.
+	// Set up a waiter to detect when the downstream connection is closed (HUP).
 	wq := &waiter.Queue{}
 	we, downstreamClosed := waiter.NewChannelEntry(waiter.EventHUp)
 	wq.EventRegister(&we)
 
-	r := &netstackTCPFwd{
+	return &netstackTCPFwd{
 		fr:               fr,
 		ctx:              &ctx,
 		cancel:           cancel,
 		wq:               wq,
+		we:               &we,
 		done:             make(chan struct{}),
 		downstreamClosed: downstreamClosed,
 	}
-
-	return r
 }
 
 func (r *netstackTCPFwd) Reject() {
-	r.fr.Complete(true) // Send RST.
+	// Reject the connection by sending a TCP RST.
+	r.fr.Complete(true)
 }
 
 func (r *netstackTCPFwd) Cleanup() {
-	if r.cancel != nil {
-		r.cancel()
-	}
-	if r.we != nil {
-		r.wq.EventUnregister(r.we)
-	}
-	if r.done != nil {
-		close(r.done)
-	}
-	if r.upstream != nil {
-		r.upstream.Close()
-	}
-	if r.downstream != nil {
-		r.downstream.Close()
-	}
+	// Ensure cleanup logic runs only once, even if called from multiple places.
+	r.cleanupOnce.Do(func() {
+		// Cancel the context to signal any in-flight operations to stop.
+		if r.cancel != nil {
+			r.cancel()
+		}
+
+		// Unregister the waiter entry to avoid leaks.
+		if r.we != nil {
+			r.wq.EventUnregister(r.we)
+		}
+
+		// Close the done channel to notify any goroutines waiting on shutdown.
+		select {
+		case <-r.done:
+			// Already closed
+		default:
+			close(r.done)
+		}
+
+		// Close upstream and downstream connections if they exist.
+		if r.upstream != nil {
+			r.upstream.Close()
+		}
+		if r.downstream != nil {
+			r.downstream.Close()
+		}
+	})
 }
 
 func (r *netstackTCPFwd) ConnectUpstream(timeout time.Duration, count int) (*net.TCPConn, error) {
-	// Cleanup goroutine.
+	// Start a background goroutine that cancels the upstream connection
+	// if the downstream connection closes or if Cleanup is triggered.
 	go func() {
 		select {
 		case <-r.downstreamClosed:
 		case <-r.done:
 		}
-		r.cancel()
+		// Ensure all resources are released.
+		r.Cleanup()
 	}()
 
 	cr := r.fr.ID()
 
-	// TODO: handle IPv6.
+	// TODO: Add IPv6 support.
 	serverIP := parseIPv4(cr.LocalAddress)
 	serverAddrPort := netip.AddrPortFrom(serverIP, cr.LocalPort)
 
-	// Connect to the server.
+	// Dial the upstream server.
 	var dialer net.Dialer
 	server, err := dialer.DialContext(*r.ctx, "tcp", serverAddrPort.String())
 	if err != nil {
-		r.fr.Complete(true) // Send RST.
-		return nil, fmt.Errorf("error dialing %s: %s", serverAddrPort, err)
+		// Reject the connection if dialing fails.
+		r.fr.Complete(true)
+		return nil, err
 	}
 
-	// Set TCP keepalive options.
+	// Set TCP keepalive options for the upstream connection.
 	setTCPConnTimeouts(server.(*net.TCPConn), keepaliveInterval, keepaliveCount)
 
 	r.upstream = server.(*net.TCPConn)
-
 	return r.upstream, nil
 }
 
@@ -161,9 +183,4 @@ func (r *netstackTCPFwd) setTimeouts(interval time.Duration, count int) tcpip.Er
 // https://blog.cloudflare.com/when-tcp-sockets-refuse-to-die/
 func tcpUserTimeout(interval time.Duration, count int) time.Duration {
 	return interval + (interval * time.Duration(count)) - 1
-}
-
-func proxyTCP(src, dst net.Conn, teardown chan error) {
-	_, err := io.Copy(dst, src)
-	teardown <- err
 }
