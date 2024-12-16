@@ -325,20 +325,20 @@ type TCPBind struct {
 	log  *zap.SugaredLogger
 }
 
-func NewTCPBind(src *netip.AddrPort, conn *RobustTCPConn, log *zap.SugaredLogger) *TCPBind {
+func NewTCPBind(src *netip.AddrPort, conn *RobustTCPConn, log *zap.SugaredLogger) (*TCPBind, error) {
 	if src == nil {
-		panic("src cannot be nil")
+		return nil, fmt.Errorf("src cannot be nil")
 	}
 	if conn == nil {
-		panic("conn cannot be nil")
+		return nil, fmt.Errorf("conn cannot be nil")
 	}
 	if log == nil {
-		panic("logger cannot be nil")
+		return nil, fmt.Errorf("logger cannot be nil")
 	}
 
 	dst, err := netip.ParseAddrPort(conn.addr)
 	if err != nil {
-		panic(fmt.Sprintf("invalid destination address: %v", err))
+		return nil, fmt.Errorf("invalid destination address: %w", err)
 	}
 
 	return &TCPBind{
@@ -346,7 +346,7 @@ func NewTCPBind(src *netip.AddrPort, conn *RobustTCPConn, log *zap.SugaredLogger
 		dst:  dst,
 		conn: conn,
 		log:  log,
-	}
+	}, nil
 }
 
 func (b *TCPBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
