@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -23,6 +22,8 @@ import (
 )
 
 const (
+	mtu                   = 1500
+	queueSize             = 1024
 	headerSize            = 2
 	defaultDialTimeout    = 10 * time.Second
 	defaultKeepAlive      = 30 * time.Second
@@ -32,18 +33,19 @@ const (
 var (
 	_ conn.Endpoint = (*TCPEndpoint)(nil)
 	_ conn.Bind     = (*TCPBind)(nil)
-)
 
-type tcpConnectionState struct {
-	conn  *net.TCPConn
-	epoch int64
-}
+	packetPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, headerSize+mtu)
+			return &b
+		},
+	}
+)
 
 type RobustTCPConn struct {
 	addr      string
-	conn      atomic.Value // stores *tcpConnectionState
-	mu        sync.Mutex   // guards connection establishment only
-	epoch     int64        // atomic, incremented for each new connection
+	conn      *net.TCPConn // protected by mu for writes, can be read without lock
+	mu        sync.Mutex   // guards conn modifications
 	proxyURL  *url.URL     // cached proxy URL
 	proxyAuth string       // cached proxy auth header
 	log       *zap.SugaredLogger
@@ -54,7 +56,7 @@ func NewRobustTCPConn(addr string, log *zap.SugaredLogger) *RobustTCPConn {
 		addr: addr,
 		log:  log,
 	}
-	r.conn.Store((*tcpConnectionState)(nil))
+	r.conn = nil
 
 	proxyURL, err := r.determineProxyURL()
 	if err != nil {
@@ -198,14 +200,7 @@ func (r *RobustTCPConn) connectViaProxy(proxyURL *url.URL) (*net.TCPConn, error)
 	return tcpConn, nil
 }
 
-func (r *RobustTCPConn) establishConnection() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if state := r.conn.Load().(*tcpConnectionState); state != nil {
-		return nil
-	}
-
+func (r *RobustTCPConn) establishConnection() (*net.TCPConn, error) {
 	var newConn *net.TCPConn
 	var err error
 
@@ -214,7 +209,7 @@ func (r *RobustTCPConn) establishConnection() error {
 		newConn, err = r.connectViaProxy(r.proxyURL)
 		if err != nil {
 			r.log.Warnf("Proxy connection to %s via %s failed: %v", r.addr, r.proxyURL.Host, err)
-			return fmt.Errorf("proxy connection failed: %w", err)
+			return nil, fmt.Errorf("proxy connection failed: %w", err)
 		}
 		r.log.Infof("Proxy connection to %s via %s successful", r.addr, r.proxyURL.Host)
 	} else {
@@ -222,74 +217,74 @@ func (r *RobustTCPConn) establishConnection() error {
 		newConn, err = r.connectDirect()
 		if err != nil {
 			r.log.Warnf("Direct connection to %s failed: %v", r.addr, err)
-			return fmt.Errorf("direct connection failed: %w", err)
+			return nil, fmt.Errorf("direct connection failed: %w", err)
 		}
 		r.log.Infof("Direct connection to %s successful", r.addr)
 	}
 
-	state := &tcpConnectionState{
-		conn:  newConn,
-		epoch: atomic.AddInt64(&r.epoch, 1),
+	return newConn, nil
+}
+
+func (r *RobustTCPConn) performIO(op func(*net.TCPConn) (int, error)) (n int, err error) {
+	// Fast path: try without lock first
+	if conn := r.conn; conn != nil {
+		n, err = op(conn)
+		if err == nil || !isConnectionError(err) {
+			return n, err
+		}
+		// Connection error occurred, fall through to reconnection logic
 	}
-	r.conn.Store(state)
-	return nil
+
+	// Slow path: need to establish/re-establish connection
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Check again with the lock. Another goroutine may have already established the connection
+	// before we got the lock.
+	if r.conn == nil {
+		newConn, err := r.establishConnection()
+		if err != nil {
+			return 0, err
+		}
+		r.conn = newConn
+	}
+
+	n, err = op(r.conn)
+	if err != nil && isConnectionError(err) {
+		r.conn.Close()
+		r.conn = nil
+		// Try to establish new connection immediately
+		newConn, err := r.establishConnection()
+		if err != nil {
+			return 0, err
+		}
+		r.conn = newConn
+		// Try one more time with new connection
+		return op(r.conn)
+	}
+	return n, err
 }
 
 func (r *RobustTCPConn) Read(b []byte) (n int, err error) {
-	for {
-		state := r.conn.Load().(*tcpConnectionState)
-		if state == nil {
-			if err := r.establishConnection(); err != nil {
-				return 0, err
-			}
-			continue
-		}
-
-		n, err = state.conn.Read(b)
-		if err != nil && isConnectionError(err) {
-			if current := r.conn.Load().(*tcpConnectionState); current != nil && current.epoch == state.epoch {
-				r.conn.Store((*tcpConnectionState)(nil))
-				state.conn.Close()
-			}
-			if err := r.establishConnection(); err != nil {
-				return 0, err
-			}
-			continue
-		}
-		return n, err
-	}
+	return r.performIO(func(conn *net.TCPConn) (int, error) {
+		return conn.Read(b)
+	})
 }
 
 func (r *RobustTCPConn) Write(b []byte) (n int, err error) {
-	for {
-		state := r.conn.Load().(*tcpConnectionState)
-		if state == nil {
-			if err := r.establishConnection(); err != nil {
-				return 0, err
-			}
-			continue
-		}
-
-		n, err = state.conn.Write(b)
-		if err != nil && isConnectionError(err) {
-			if current := r.conn.Load().(*tcpConnectionState); current != nil && current.epoch == state.epoch {
-				r.conn.Store((*tcpConnectionState)(nil))
-				state.conn.Close()
-			}
-			if err := r.establishConnection(); err != nil {
-				return 0, err
-			}
-			continue
-		}
-		return n, err
-	}
+	return r.performIO(func(conn *net.TCPConn) (int, error) {
+		return conn.Write(b)
+	})
 }
 
 func (r *RobustTCPConn) Close() error {
-	state := r.conn.Load().(*tcpConnectionState)
-	if state != nil {
-		r.conn.Store((*tcpConnectionState)(nil))
-		return state.conn.Close()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.conn != nil {
+		err := r.conn.Close()
+		r.conn = nil
+		return err
 	}
 	return nil
 }
@@ -305,7 +300,7 @@ func isConnectionError(err error) bool {
 		return true
 	}
 	if netErr, ok := err.(net.Error); ok {
-		return netErr.Timeout() || netErr.Temporary()
+		return netErr.Timeout()
 	}
 	errStr := err.Error()
 	if strings.Contains(errStr, "connection reset by peer") ||
@@ -320,9 +315,18 @@ type TCPBind struct {
 	conn *RobustTCPConn
 	src  netip.AddrPort
 	dst  netip.AddrPort
-	rmu  sync.Mutex
-	smu  sync.Mutex
 	log  *zap.SugaredLogger
+
+	// Channels for packet handling
+	writeCh chan []byte
+	readCh  chan packet
+	done    chan struct{}
+	wg      sync.WaitGroup
+}
+
+type packet struct {
+	data []byte
+	err  error
 }
 
 func NewTCPBind(src *netip.AddrPort, conn *RobustTCPConn, log *zap.SugaredLogger) (*TCPBind, error) {
@@ -341,12 +345,96 @@ func NewTCPBind(src *netip.AddrPort, conn *RobustTCPConn, log *zap.SugaredLogger
 		return nil, fmt.Errorf("invalid destination address: %w", err)
 	}
 
-	return &TCPBind{
-		src:  *src,
-		dst:  dst,
-		conn: conn,
-		log:  log,
-	}, nil
+	b := &TCPBind{
+		src:     *src,
+		dst:     dst,
+		conn:    conn,
+		log:     log,
+		writeCh: make(chan []byte, queueSize),
+		readCh:  make(chan packet, queueSize),
+		done:    make(chan struct{}),
+	}
+
+	// Start reader and writer goroutines
+	b.wg.Add(2)
+	go b.writeLoop()
+	go b.readLoop()
+
+	return b, nil
+}
+
+func (b *TCPBind) writeLoop() {
+	defer b.wg.Done()
+
+	for {
+		select {
+		case <-b.done:
+			return
+		case data := <-b.writeCh:
+			_, err := b.conn.Write(data)
+			if err != nil {
+				b.log.Errorf("Failed to write packet: %v", err)
+			}
+			packetPool.Put(data)
+		}
+	}
+}
+
+func (b *TCPBind) readLoop() {
+	defer b.wg.Done()
+
+	header := make([]byte, headerSize)
+	for {
+		select {
+		case <-b.done:
+			return
+		default:
+			_, err := io.ReadFull(b.conn, header)
+			if err != nil {
+				if !isConnectionError(err) {
+					b.log.Errorf("Failed to read header: %v", err)
+				}
+				select {
+				case b.readCh <- packet{err: err}:
+				case <-b.done:
+					return
+				}
+				continue
+			}
+
+			size := binary.BigEndian.Uint16(header)
+			if size == 0 {
+				select {
+				case b.readCh <- packet{err: fmt.Errorf("invalid packet size")}:
+				case <-b.done:
+					return
+				}
+				continue
+			}
+
+			buf := packetPool.Get().([]byte)
+			_, err = io.ReadFull(b.conn, buf[:size])
+			if err != nil {
+				packetPool.Put(buf)
+				if !isConnectionError(err) {
+					b.log.Errorf("Failed to read packet: %v", err)
+				}
+				select {
+				case b.readCh <- packet{err: err}:
+				case <-b.done:
+					return
+				}
+				continue
+			}
+
+			select {
+			case b.readCh <- packet{data: buf[:size]}:
+			case <-b.done:
+				packetPool.Put(buf)
+				return
+			}
+		}
+	}
 }
 
 func (b *TCPBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
@@ -359,39 +447,27 @@ func (b *TCPBind) makeReceiveIPv4() conn.ReceiveFunc {
 			return 0, fmt.Errorf("invalid buffer slices")
 		}
 
-		b.rmu.Lock()
-		defer b.rmu.Unlock()
+		select {
+		case pkt := <-b.readCh:
+			if pkt.err != nil {
+				return 0, pkt.err
+			}
 
-		// Read the packet size header. We are framing UDP packets in TCP packets
-		// using a 2 byte header.
-		header := make([]byte, headerSize)
-		n, err := io.ReadFull(b.conn, header)
-		if err != nil {
-			return 0, fmt.Errorf("failed to read header: %w", err)
-		}
-		if n != headerSize {
-			return 0, fmt.Errorf("incomplete header read: got %d bytes", n)
-		}
-		pktSize := binary.BigEndian.Uint16(header)
-		if pktSize == 0 {
-			return 0, fmt.Errorf("invalid packet size")
-		}
-		if int(pktSize) > len(bufs[0]) {
-			return 0, fmt.Errorf("packet too large: %d bytes", pktSize)
-		}
-		// Read the packet data.
-		n, err = io.ReadFull(b.conn, bufs[0][:pktSize])
-		if err != nil {
-			return 0, fmt.Errorf("failed to read packet: %w", err)
-		}
-		if n != int(pktSize) {
-			return 0, fmt.Errorf("incomplete packet read: got %d bytes, expected %d", n, pktSize)
-		}
+			if len(pkt.data) > len(bufs[0]) {
+				packetPool.Put(pkt.data)
+				return 0, fmt.Errorf("packet too large: %d bytes", len(pkt.data))
+			}
 
-		eps[0] = &TCPEndpoint{src: b.src, dst: b.dst}
-		sizes[0] = n
+			copy(bufs[0], pkt.data)
+			sizes[0] = len(pkt.data)
+			eps[0] = &TCPEndpoint{src: b.src, dst: b.dst}
 
-		return 1, nil
+			packetPool.Put(pkt.data)
+			return 1, nil
+
+		case <-b.done:
+			return 0, fmt.Errorf("bind is closed")
+		}
 	}
 }
 
@@ -400,6 +476,8 @@ func (b *TCPBind) BatchSize() int {
 }
 
 func (b *TCPBind) Close() error {
+	close(b.done)
+	b.wg.Wait()
 	return b.conn.Close()
 }
 
@@ -408,32 +486,24 @@ func (b *TCPBind) Send(bufs [][]byte, ep conn.Endpoint) error {
 		return nil
 	}
 
-	b.smu.Lock()
-	defer b.smu.Unlock()
-
-	// Write the packet size header. We are framing UDP packets in TCP packets
-	// using a 2 byte header.
-	header := make([]byte, headerSize)
 	for _, data := range bufs {
 		pktSize := len(data)
 		if pktSize == 0 {
 			continue
 		}
-		if pktSize > 65535 {
+		if pktSize > mtu {
 			return fmt.Errorf("packet too large: %d bytes", pktSize)
 		}
-		binary.BigEndian.PutUint16(header, uint16(pktSize))
-		_, err := b.conn.Write(header)
-		if err != nil {
-			return fmt.Errorf("failed to write packet header: %w", err)
-		}
-		// Write packet data.
-		n, err := b.conn.Write(data)
-		if err != nil {
-			return fmt.Errorf("failed to write packet data: %w", err)
-		}
-		if n != pktSize {
-			return fmt.Errorf("incomplete packet write: wrote %d bytes, expected %d", n, pktSize)
+
+		pkt := packetPool.Get().([]byte)
+		binary.BigEndian.PutUint16(pkt, uint16(pktSize))
+		copy(pkt[headerSize:], data)
+
+		select {
+		case b.writeCh <- pkt[:headerSize+pktSize]:
+		case <-b.done:
+			packetPool.Put(pkt)
+			return fmt.Errorf("bind is closed")
 		}
 	}
 	return nil
