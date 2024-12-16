@@ -299,13 +299,14 @@ func isConnectionError(err error) bool {
 	if err == io.ErrUnexpectedEOF {
 		return true
 	}
-	if netErr, ok := err.(net.Error); ok {
-		return netErr.Timeout()
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
 	}
 	errStr := err.Error()
 	if strings.Contains(errStr, "connection reset by peer") ||
 		strings.Contains(errStr, "broken pipe") ||
-		strings.Contains(errStr, "connection refused") {
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "use of closed network connection") {
 		return true
 	}
 	return false
