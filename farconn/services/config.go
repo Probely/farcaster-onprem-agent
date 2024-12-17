@@ -29,6 +29,8 @@ var defaultAPIURLs = []string{
 	"https://api.us.probely.com",
 }
 
+var configClient = createHTTPClient()
+
 type ConfigFile struct {
 	Data   string
 	Secret string

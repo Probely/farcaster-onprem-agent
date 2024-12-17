@@ -86,6 +86,7 @@ func NewChannelBind(addr *netip.AddrPort, tun *ChannelTUN, log *zap.SugaredLogge
 }
 
 func (b *ChannelBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
+	b.log.Infof("Opened channel bind")
 	return []conn.ReceiveFunc{b.makeReceiveIPv4()}, b.listen.Port(), nil
 }
 
@@ -207,7 +208,7 @@ func (b *ChannelBind) BatchSize() int {
 }
 
 func (b *ChannelBind) Close() error {
-	b.log.Info("Closing channel bind")
+	b.log.Infof("Closed channel bind")
 	return nil
 }
 

@@ -12,6 +12,7 @@ package netstack
 import (
 	"net/netip"
 	"os"
+	"sync"
 
 	"go.uber.org/zap"
 	"golang.zx2c4.com/wireguard/tun"
@@ -24,6 +25,8 @@ type TUN struct {
 	name   string
 	mtu    int
 	log    *zap.SugaredLogger
+	closed bool
+	mu     sync.Mutex
 }
 
 // NewTUN creates a new TUN device using Netstack.
@@ -38,7 +41,10 @@ func NewTUN(addr netip.Addr, name string, mtu int, logger *zap.SugaredLogger) (*
 		name:   name,
 		mtu:    mtu,
 		log:    logger,
+		closed: false,
 	}
+
+	logger.Info("Created TUN device: ", t.name)
 
 	t.events <- tun.EventUp
 	return t, nil
@@ -95,8 +101,17 @@ func (t *TUN) Events() <-chan tun.Event { return t.events }
 
 // Close closes the TUN device.
 func (t *TUN) Close() error {
-	t.log.Info("Closing TUN device")
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return nil
+	}
+
+	t.closed = true
+	t.mu.Unlock()
+
 	// Tear down the network stack.
 	t.ns.Close()
+	t.log.Info("Closed TUN device: ", t.name)
 	return nil
 }

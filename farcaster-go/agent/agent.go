@@ -148,7 +148,6 @@ func (a *Agent) UpTCP() error {
 		return fmt.Errorf("invalid tunnel address: %w", err)
 	}
 
-	// Create a TCP bind.
 	host, _, err := net.SplitHostPort(cfg.Peers[0].Endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint: %w", err)
@@ -323,28 +322,14 @@ func (a *Agent) WaitForConnection(maxTries int) error {
 		return nil
 	}
 
-	// Try UDP 53 if UDP 443 failed
-	hub.Endpoint = strings.Replace(tunCfg.Peers[0].Endpoint, ":443", ":53", 1)
-	if err := a.tunDev.IpcSet(tunCfg.UAPIConfig()); err != nil {
-		return fmt.Errorf("could not configure tunnel: %w", err)
-	}
-	if err := a.tryConnection("UDP", hub.Endpoint); err == nil {
-		return nil
-	}
-
-	// Try TCP if both UDP attempts fail
+	// Try TCP as fallback.
 	a.log.Warnf("Failed to connect using UDP, trying TCP...")
 	a.Close()
 	if err := a.UpTCP(); err != nil {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	host, _, err := net.SplitHostPort(hub.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint: %w", err)
-	}
-	addr := net.JoinHostPort(host, "443")
-	if err := a.tryConnection("TCP", addr); err == nil {
+	if err := a.tryConnection("TCP", hub.Endpoint); err == nil {
 		return nil
 	}
 
