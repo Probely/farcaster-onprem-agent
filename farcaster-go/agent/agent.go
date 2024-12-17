@@ -307,6 +307,10 @@ func (a *Agent) Close() {
 }
 
 func (a *Agent) WaitForConnection(maxTries int) error {
+	if err := a.Up(); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
+
 	if a.tunDev == nil {
 		return fmt.Errorf("tunnel not configured")
 	}
@@ -331,7 +335,9 @@ func (a *Agent) WaitForConnection(maxTries int) error {
 	// Try TCP if both UDP attempts fail
 	a.log.Warnf("Failed to connect using UDP, trying TCP...")
 	a.Close()
-	a.UpTCP()
+	if err := a.UpTCP(); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
 
 	host, _, err := net.SplitHostPort(hub.Endpoint)
 	if err != nil {

@@ -145,14 +145,9 @@ func runAgent(token string) {
 
 	// Run in the foreground.
 	a := agent.New(token, logger)
-	err := a.Up()
-	if err != nil {
-		logger.Errorf("Failed to start agent: %v", err)
-		exit(1)
-	}
 
 	// Wait for the agent to connect to the agent hub.
-	err = a.WaitForConnection(maxConnTries)
+	err := a.WaitForConnection(maxConnTries)
 	if err != nil {
 		logger.Errorf("Failed to connect to agent hub: %v", err)
 		exit(1)
