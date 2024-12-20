@@ -130,11 +130,14 @@ func (p *Proxy) connectSOCKS5(addr string) (*net.TCPConn, error) {
 	return conn.(*net.TCPConn), nil
 }
 
-func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, connType string) error {
+func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, insecure bool, connType string, host string, payloadName string) error {
 	var rw io.ReadWriter = conn
 	if useTLS {
 		log.Printf("Starting TLS handshake (%s)...", connType)
-		config := &tls.Config{InsecureSkipVerify: true} // ONLY FOR TESTING
+		config := &tls.Config{
+			ServerName:         host,
+			InsecureSkipVerify: insecure,
+		}
 		tlsConn := tls.Client(conn, config)
 		if err := tlsConn.SetDeadline(time.Now().Add(defaultConnectTimeout)); err != nil {
 			return fmt.Errorf("failed to set TLS handshake deadline: %w", err)
@@ -153,7 +156,12 @@ func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, connType s
 		}
 	}
 
-	log.Printf("Sending payload (%s) Hex: %x", connType, payload)
+	if shouldPrintPayload(payloadName) {
+		log.Printf("Sending payload (%s) Hex: %x", connType, payload)
+	} else {
+		log.Printf("Sending payload (%s): %s", connType, string(payload))
+	}
+
 	if _, err := rw.Write(payload); err != nil {
 		return fmt.Errorf("failed to send payload: %w", err)
 	}
@@ -177,50 +185,66 @@ func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, connType s
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	fmt.Printf("Hex Response: %x\n", response[:n])
+	if shouldPrintPayload(payloadName) {
+		fmt.Printf("Hex Response: %x\n", response[:n])
+	} else {
+		fmt.Printf("Response: %s\n", string(response[:n]))
+	}
 	return nil
 }
 
-func testDirectTCPTransport(target string, payload []byte, useTLS bool) error {
+func testDirectTCPTransport(target string, payload []byte, useTLS bool, insecure bool, payloadName string) error {
 	log.Printf("Connecting to %s (direct)...", target)
 	dialer := net.Dialer{
 		Timeout: defaultConnectTimeout,
+	}
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		return fmt.Errorf("invalid target address: %w", err)
 	}
 	conn, err := dialer.Dial("tcp", target)
 	if err != nil {
 		return fmt.Errorf("failed to connect to target: %w", err)
 	}
 	log.Printf("Connected to %s (direct)", target)
-	return testTCPTransport(conn.(*net.TCPConn), payload, useTLS, "direct")
+	return testTCPTransport(conn.(*net.TCPConn), payload, useTLS, insecure, "direct", host, payloadName)
 }
 
-func testHTTPProxyTransport(httpProxy, target string, payload []byte, useTLS bool) error {
+func testHTTPProxyTransport(httpProxy, target string, payload []byte, useTLS bool, insecure bool, payloadName string) error {
 	httpProxyURL, err := url.Parse(httpProxy)
 	if err != nil {
 		return fmt.Errorf("failed to parse http proxy: %w", err)
+	}
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		return fmt.Errorf("invalid target address: %w", err)
 	}
 	proxy := NewProxy(*httpProxyURL, url.URL{})
 	conn, err := proxy.connectHTTP(target)
 	if err != nil {
 		return fmt.Errorf("failed to connect to proxy: %w", err)
 	}
-	return testTCPTransport(conn, payload, useTLS, fmt.Sprintf("http proxy: %s", httpProxy))
+	return testTCPTransport(conn, payload, useTLS, insecure, fmt.Sprintf("http proxy: %s", httpProxy), host, payloadName)
 }
 
-func testSOCKS5ProxyTransport(socks5Proxy, target string, payload []byte, useTLS bool) error {
+func testSOCKS5ProxyTransport(socks5Proxy, target string, payload []byte, useTLS bool, insecure bool, payloadName string) error {
 	socks5ProxyURL, err := url.Parse(socks5Proxy)
 	if err != nil {
 		return fmt.Errorf("failed to parse socks5 proxy: %w", err)
+	}
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		return fmt.Errorf("invalid target address: %w", err)
 	}
 	proxy := NewProxy(url.URL{}, *socks5ProxyURL)
 	conn, err := proxy.connectSOCKS5(target)
 	if err != nil {
 		return fmt.Errorf("failed to connect to proxy: %w", err)
 	}
-	return testTCPTransport(conn, payload, useTLS, fmt.Sprintf("socks5 proxy: %s", socks5Proxy))
+	return testTCPTransport(conn, payload, useTLS, insecure, fmt.Sprintf("socks5 proxy: %s", socks5Proxy), host, payloadName)
 }
 
-func testWebSocketTransport(wsURL *url.URL, payload []byte) error {
+func testWebSocketTransport(wsURL *url.URL, payload []byte, insecure bool, payloadName string) error {
 	proxyType := "direct"
 	if os.Getenv("HTTP_PROXY") != "" {
 		proxyType = fmt.Sprintf("http proxy: %s", os.Getenv("HTTP_PROXY"))
@@ -230,7 +254,10 @@ func testWebSocketTransport(wsURL *url.URL, payload []byte) error {
 
 	log.Printf("Establishing WebSocket connection to %s (%s)...", wsURL.String(), proxyType)
 	dialer := websocket.Dialer{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			ServerName:         wsURL.Hostname(),
+			InsecureSkipVerify: insecure,
+		},
 		Proxy: func(req *http.Request) (*url.URL, error) {
 			return http.ProxyFromEnvironment(req)
 		},
@@ -262,8 +289,17 @@ func testWebSocketTransport(wsURL *url.URL, payload []byte) error {
 		return fmt.Errorf("failed to read from websocket: %w", err)
 	}
 
-	fmt.Printf("WebSocket Response: %x\n", message)
+	if shouldPrintPayload(payloadName) {
+		fmt.Printf("WebSocket Response: %x\n", message)
+	} else {
+		fmt.Printf("WebSocket Response: %s\n", string(message))
+	}
 	return nil
+}
+
+func shouldPrintPayload(payloadName string) bool {
+	// Only wireguard payloads should be hex-encoded
+	return payloadName == "wireguard"
 }
 
 func main() {
@@ -275,19 +311,21 @@ func main() {
 		wsURL       string
 		httpProxy   string
 		socks5Proxy string
+		insecure    bool
 	)
 
 	flag.StringVar(&target, "target", "", "Target address (host:port)")
 	flag.StringVar(&httpProxy, "http-proxy", "", "HTTP proxy address (host:port)")
 	flag.StringVar(&socks5Proxy, "socks5-proxy", "", "SOCKS5 proxy address (host:port)")
 	flag.BoolVar(&tls, "tls", false, "Use TLS")
+	flag.BoolVar(&insecure, "insecure", false, "Skip TLS certificate verification")
 	flag.StringVar(&hexPayload, "payload", "", "Hex-encoded payload")
 	flag.StringVar(&payloadName, "payload-name", "", "Use predefined payload: [wireguard]")
 	flag.StringVar(&wsURL, "ws-url", "", "WebSocket URL (only for ws/wss)")
 	flag.Parse()
 
-	if target == "" {
-		log.Fatal("Target address is required")
+	if target == "" && wsURL == "" {
+		log.Fatal("Either target address or WebSocket URL is required")
 	}
 
 	var payload []byte
@@ -305,6 +343,11 @@ func main() {
 		log.Printf("Creating %s payload. Please wait...", payloadName)
 		payload = payloadFunc(target)
 		log.Printf("Payload created")
+		if shouldPrintPayload(payloadName) {
+			log.Printf("Payload (hex): %x", payload)
+		} else {
+			log.Printf("Payload: %s", string(payload))
+		}
 	}
 
 	if wsURL != "" {
@@ -319,7 +362,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to parse target URL: %v", err)
 		}
-		err = testWebSocketTransport(targetURL, payload)
+		err = testWebSocketTransport(targetURL, payload, insecure, payloadName)
 		if err != nil {
 			log.Fatalf("Test failed: %v", err)
 		}
@@ -331,7 +374,7 @@ func main() {
 		if !strings.HasPrefix(httpProxy, "http://") && !strings.HasPrefix(httpProxy, "https://") {
 			httpProxy = "http://" + httpProxy
 		}
-		err = testHTTPProxyTransport(httpProxy, target, payload, tls)
+		err = testHTTPProxyTransport(httpProxy, target, payload, tls, insecure, payloadName)
 		if err != nil {
 			log.Fatalf("Test failed: %v", err)
 		}
@@ -343,14 +386,14 @@ func main() {
 		if !strings.HasPrefix(socks5Proxy, "socks5://") {
 			socks5Proxy = "socks5://" + socks5Proxy
 		}
-		err = testSOCKS5ProxyTransport(socks5Proxy, target, payload, tls)
+		err = testSOCKS5ProxyTransport(socks5Proxy, target, payload, tls, insecure, payloadName)
 		if err != nil {
 			log.Fatalf("Test failed: %v", err)
 		}
 		return
 	}
 
-	err = testDirectTCPTransport(target, payload, tls)
+	err = testDirectTCPTransport(target, payload, tls, insecure, payloadName)
 	if err != nil {
 		log.Fatalf("Test failed: %v", err)
 	}

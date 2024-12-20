@@ -147,13 +147,22 @@ func main() {
 		mux.HandleFunc("/", handleHTTP)
 		mux.HandleFunc("/ws", handleWebSocket)
 
-		// HTTP Server - dedicated to ACME challenges
+		// Create a handler that checks for ACME challenges first, then falls back to our mux
+		combinedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check if this is an ACME challenge
+			if strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
+				certManager.HTTPHandler(nil).ServeHTTP(w, r)
+				return
+			}
+			// Otherwise, use our regular handler
+			mux.ServeHTTP(w, r)
+		})
+
 		httpServer := &http.Server{
 			Addr:    httpAddr,
-			Handler: certManager.HTTPHandler(nil), // Handle ACME challenges only
+			Handler: combinedHandler,
 		}
 
-		// HTTPS Server with your application handlers
 		httpsServer := &http.Server{
 			Addr: httpsAddr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
