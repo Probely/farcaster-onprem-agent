@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/hex"
 	"flag"
@@ -10,25 +9,54 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for testing
-	},
+var (
+	// Known responses for specific messages
+	responses = map[string]string{
+		// Text-based
+		hex.EncodeToString([]byte("PING\r\n")): hex.EncodeToString([]byte("PONG\r\n")),
+		// WireGuard
+		"00000094010000003551e4f915a4c9ed5ae0db77a6443d7173b0a0b0702f106c1df093bbfb37e52d7f82210d1dfaeb1d1a45b41138ddf0a87991f6e100aa144215ada3f68654407ac810a88f93cfc28158cd080ac3f522a30d2323a6411ca7f8a7193cd6f4f97a671459d348fde26fe9fdc49b1f87d790f724d264e1e04eb07ba2779934917ba2d600000000000000000000000000000000": "005c02000000efae78a63551e4f99fefc045fdadfebeeb0e0be61cea839cacfad56f7a68ca348626b650c498467954f5745488d6619fb9420854c2ce314f735e631bdc0f2a23b3a856fcdce6007800000000000000000000000000000000",
+	}
+
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins for testing
+		},
+	}
+)
+
+// Helper function to safely lookup binary data in the responses map
+func lookupResponse(data []byte) ([]byte, bool) {
+	hexKey := hex.EncodeToString(data)
+	hexResponse, exists := responses[hexKey]
+	if !exists {
+		return data, false
+	}
+	response, err := hex.DecodeString(hexResponse)
+	if err != nil {
+		return data, false
+	}
+	return response, true
 }
 
 func main() {
 	var (
-		addr     string
+		httpAddr string
+		tcpAddr  string
 		certFile string
 		keyFile  string
 	)
 
-	flag.StringVar(&addr, "addr", ":8080", "Address to listen on")
+	flag.StringVar(&httpAddr, "http", ":8080", "HTTP/HTTPS address")
+	flag.StringVar(&tcpAddr, "tcp", ":8081", "TCP/TLS address")
 	flag.StringVar(&certFile, "cert", "", "TLS certificate file")
 	flag.StringVar(&keyFile, "key", "", "TLS key file")
 	flag.Parse()
@@ -46,9 +74,9 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(4) // HTTP, WebSocket, TCP Text, TCP Binary
 
-	// Start HTTP/WebSocket server
+	// Start HTTP/HTTPS server
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		mux := http.NewServeMux()
@@ -56,68 +84,90 @@ func main() {
 		mux.HandleFunc("/ws", handleWebSocket)
 
 		server := &http.Server{
-			Addr:      addr,
+			Addr:      httpAddr,
 			Handler:   mux,
 			TLSConfig: tlsConfig,
 		}
 
-		log.Printf("Starting HTTP/WebSocket server on %s", addr)
-		var err error
+		// Start plain HTTP server
+		go func() {
+			log.Printf("Starting HTTP server on %s", httpAddr)
+			if err := server.ListenAndServe(); err != http.ErrServerClosed {
+				log.Printf("HTTP server error: %v", err)
+			}
+		}()
+
+		// Start HTTPS server if TLS is configured
 		if tlsConfig != nil {
-			err = server.ListenAndServeTLS("", "")
-		} else {
-			err = server.ListenAndServe()
-		}
-		if err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %v", err)
+			httpsAddr := fmt.Sprintf(":%d", getPort(httpAddr)+1)
+			tlsServer := &http.Server{
+				Addr:      httpsAddr,
+				Handler:   mux,
+				TLSConfig: tlsConfig,
+			}
+			log.Printf("Starting HTTPS server on %s", httpsAddr)
+			if err := tlsServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+				log.Printf("HTTPS server error: %v", err)
+			}
 		}
 	}()
 
-	// Start TCP Text server
-	tcpAddr := fmt.Sprintf(":%d", getPort(addr)+1)
+	// Start TCP/TLS server
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		listener, err := createListener(tcpAddr, tlsConfig)
+
+		// Start plain TCP server
+		tcpListener, err := net.Listen("tcp", tcpAddr)
 		if err != nil {
-			log.Printf("Failed to start TCP text server: %v", err)
+			log.Printf("Failed to start TCP server: %v", err)
 			return
 		}
-		log.Printf("Starting TCP text server on %s", listener.Addr())
-		handleTCPServer(listener, handleTextConnection)
+		log.Printf("Starting TCP server on %s", tcpAddr)
+		go handleTCPServer(tcpListener)
+
+		// Start TLS server if TLS is configured
+		if tlsConfig != nil {
+			tlsAddr := fmt.Sprintf(":%d", getPort(tcpAddr)+1)
+			tlsListener, err := net.Listen("tcp", tlsAddr)
+			if err != nil {
+				log.Printf("Failed to start TLS server: %v", err)
+				return
+			}
+			tlsListener = tls.NewListener(tlsListener, tlsConfig)
+			log.Printf("Starting TLS server on %s", tlsAddr)
+			go handleTCPServer(tlsListener)
+		}
 	}()
 
-	// Start TCP Binary server
-	binaryAddr := fmt.Sprintf(":%d", getPort(addr)+2)
-	go func() {
-		defer wg.Done()
-		listener, err := createListener(binaryAddr, tlsConfig)
-		if err != nil {
-			log.Printf("Failed to start TCP binary server: %v", err)
-			return
-		}
-		log.Printf("Starting TCP binary server on %s", listener.Addr())
-		handleTCPServer(listener, handleBinaryConnection)
-	}()
+	// Set up signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start WireGuard server
-	wgAddr := fmt.Sprintf(":%d", getPort(addr)+3)
-	go func() {
-		defer wg.Done()
-		listener, err := createListener(wgAddr, tlsConfig)
-		if err != nil {
-			log.Printf("Failed to start WireGuard server: %v", err)
-			return
-		}
-		log.Printf("Starting WireGuard server on %s", listener.Addr())
-		handleTCPServer(listener, handleWireGuardConnection)
-	}()
+	// Wait for interrupt signal
+	<-sigChan
+	log.Println("Shutting down servers...")
+
+	// Here you could add graceful shutdown code if needed
 
 	wg.Wait()
+	log.Println("Servers stopped")
 }
 
 func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received HTTP request from %s", r.RemoteAddr)
-	w.Write([]byte("HTTP OK\n"))
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+		return
+	}
+
+	response, exists := lookupResponse(body)
+	if !exists {
+		response = body // Echo back if no known response
+	}
+
+	w.Write(response)
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -138,80 +188,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received WebSocket message from %s: %x", conn.RemoteAddr(), message)
 
-	// Echo the message back
-	if err := conn.WriteMessage(messageType, message); err != nil {
+	response, exists := lookupResponse(message)
+	if !exists {
+		response = message // Echo back if no known response
+	}
+
+	if err := conn.WriteMessage(messageType, response); err != nil {
 		log.Printf("WebSocket write error: %v", err)
 		return
 	}
 }
 
-func handleTextConnection(conn net.Conn) {
-	defer conn.Close()
-	reader := bufio.NewReader(conn)
-	message, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		log.Printf("Text connection read error: %v", err)
-		return
-	}
-
-	log.Printf("Received text message from %s: %q", conn.RemoteAddr(), message)
-	conn.Write([]byte(fmt.Sprintf("Text OK: %s", message)))
-}
-
-func handleBinaryConnection(conn net.Conn) {
-	defer conn.Close()
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		log.Printf("Binary connection read error: %v", err)
-		return
-	}
-
-	log.Printf("Received binary message from %s: %x", conn.RemoteAddr(), buf[:n])
-	conn.Write(buf[:n]) // Echo the binary data back
-}
-
-func handleWireGuardConnection(conn net.Conn) {
-	defer conn.Close()
-
-	// Read the 2-byte size prefix
-	sizeBuf := make([]byte, 2)
-	if _, err := io.ReadFull(conn, sizeBuf); err != nil {
-		log.Printf("Failed to read size prefix: %v", err)
-		return
-	}
-
-	size := (int(sizeBuf[0]) << 8) | int(sizeBuf[1])
-	payload := make([]byte, size)
-
-	if _, err := io.ReadFull(conn, payload); err != nil {
-		log.Printf("Failed to read payload: %v", err)
-		return
-	}
-
-	log.Printf("Received WireGuard handshake from %s: %s", conn.RemoteAddr(), hex.EncodeToString(payload))
-
-	// Echo the framed payload back
-	response := append(sizeBuf, payload...)
-	if _, err := conn.Write(response); err != nil {
-		log.Printf("Failed to write response: %v", err)
-		return
-	}
-}
-
-func createListener(addr string, tlsConfig *tls.Config) (net.Listener, error) {
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	if tlsConfig != nil {
-		return tls.NewListener(listener, tlsConfig), nil
-	}
-	return listener, nil
-}
-
-func handleTCPServer(listener net.Listener, handler func(net.Conn)) {
+func handleTCPServer(listener net.Listener) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -220,14 +208,38 @@ func handleTCPServer(listener net.Listener, handler func(net.Conn)) {
 			}
 			return
 		}
-		go handler(conn)
+		go handleTCPConnection(conn)
+	}
+}
+
+func handleTCPConnection(conn net.Conn) {
+	defer conn.Close()
+
+	buf := make([]byte, 64*1024)
+	n, err := conn.Read(buf)
+	if err != nil && err != io.EOF {
+		log.Printf("TCP read error: %v", err)
+		return
+	}
+
+	message := buf[:n]
+	log.Printf("Received message from %s: %x", conn.RemoteAddr(), message)
+
+	response, exists := lookupResponse(message)
+	if !exists {
+		response = message // Echo back if no known response
+	}
+
+	if _, err := conn.Write(response); err != nil {
+		log.Printf("TCP write error: %v", err)
+		return
 	}
 }
 
 func getPort(addr string) int {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return 8080 // Default fallback
+		return 8080
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port

@@ -29,12 +29,12 @@ const (
 	defaultReadTimeout    = 20 * time.Second
 
 	// WireGuard test keys
-	wireguardInitiatordPrivateKey = "CGbvvxkqHJS+n2hNGzNRIl0wr7n3T25fqo5cc2trUnY="
-	wireguardResponderPublicKey   = "oi25gZPKkrAxVA7ug7cZsdqTktQEJXYXIcgNklSEdGs="
+	wireguardInitiatordPrivateKey = ""
+	wireguardResponderPublicKey   = ""
 )
 
 var payloads = map[string]func(string) []byte{
-	"wireguard": createWireguardPayload,
+	"wireguard": mockWireguardPayload,
 	"http":      createHTTPPayload,
 	"text":      func(_ string) []byte { return []byte("PING\r\n") },
 }
@@ -153,7 +153,7 @@ func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, connType s
 		}
 	}
 
-	log.Printf("Sending payload (%s)...", connType)
+	log.Printf("Sending payload (%s) Hex: %x", connType, payload)
 	if _, err := rw.Write(payload); err != nil {
 		return fmt.Errorf("failed to send payload: %w", err)
 	}
@@ -354,6 +354,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Test failed: %v", err)
 	}
+}
+
+func mockWireguardPayload(_ string) []byte {
+	payload, err := hex.DecodeString("00000094010000003551e4f915a4c9ed5ae0db77a6443d7173b0a0b0702f106c1df093bbfb37e52d7f82210d1dfaeb1d1a45b41138ddf0a87991f6e100aa144215ada3f68654407ac810a88f93cfc28158cd080ac3f522a30d2323a6411ca7f8a7193cd6f4f97a671459d348fde26fe9fdc49b1f87d790f724d264e1e04eb07ba2779934917ba2d600000000000000000000000000000000")
+	if err != nil {
+		panic(err)
+	}
+	return payload
 }
 
 func createWireguardPayload(_ string) []byte {
