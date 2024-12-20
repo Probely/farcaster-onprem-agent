@@ -333,7 +333,7 @@ func (a *Agent) WaitForConnection(maxTries int) error {
 		return nil
 	}
 
-	return fmt.Errorf("giving up after %d tries", maxTries*3)
+	return fmt.Errorf("failed to connect to the agent hub")
 }
 
 func (a *Agent) tryConnection(protocol, endpoint string) error {

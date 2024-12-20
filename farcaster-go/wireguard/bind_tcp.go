@@ -219,7 +219,7 @@ func (r *RobustTCPConn) connect() (*net.TCPConn, error) {
 }
 
 // performIO performs the IO operation on the connection.
-// If the connection is nil or encounters an error, it will attempt to establish a new connection.
+// Retries on connection errors.
 func (r *RobustTCPConn) performIO(ioop func() (int, error)) (n int, err error) {
 	conn := r.conn
 
