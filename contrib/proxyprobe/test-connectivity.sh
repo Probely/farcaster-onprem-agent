@@ -57,16 +57,16 @@ run_test() {
 # Test HTTP/HTTPS direct connections
 test_direct_connections() {
     print_header "Testing Direct Connections"
-    
+
     # HTTP
     run_test "Direct HTTP connection" \
         ./proxyprobe -target "$TARGET" -payload-name "http"
-    
-    # HTTPS secure
+
+    # HTTPS strict TLS
     run_test "Direct HTTPS connection (secure)" \
         ./proxyprobe -target "$TARGET_TLS" -tls -payload-name "http"
-    
-    # HTTPS insecure
+
+    # HTTPS no cert validation
     run_test "Direct HTTPS connection (insecure)" \
         ./proxyprobe -target "$TARGET_TLS" -tls -payload-name "http" -insecure
 }
@@ -75,16 +75,16 @@ test_direct_connections() {
 test_http_proxy_connections() {
     if [ -n "$HTTP_PROXY" ]; then
         print_header "Testing HTTP Proxy Connections via $HTTP_PROXY"
-        
+
         # HTTP via proxy
         run_test "HTTP via proxy" \
             ./proxyprobe -target "$TARGET" -http-proxy "$HTTP_PROXY" -payload-name "http"
-        
-        # HTTPS via proxy secure
+
+        # HTTPS via proxy strict TLS
         run_test "HTTPS via proxy (secure)" \
             ./proxyprobe -target "$TARGET_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "http"
-        
-        # HTTPS via proxy insecure
+
+        # HTTPS via proxy no cert validation
         run_test "HTTPS via proxy (insecure)" \
             ./proxyprobe -target "$TARGET_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "http" -insecure
     fi
@@ -94,159 +94,239 @@ test_http_proxy_connections() {
 test_socks_proxy_connections() {
     if [ -n "$SOCKS_PROXY" ]; then
         print_header "Testing SOCKS Proxy Connections via $SOCKS_PROXY"
-        
+
         # HTTP via SOCKS
         run_test "HTTP via SOCKS" \
             ./proxyprobe -target "$TARGET" -socks5-proxy "$SOCKS_PROXY" -payload-name "http"
-        
-        # HTTPS via SOCKS secure
+
+        # HTTPS via SOCKS strict TLS
         run_test "HTTPS via SOCKS (secure)" \
             ./proxyprobe -target "$TARGET_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "http"
-        
-        # HTTPS via SOCKS insecure
+
+        # HTTPS via SOCKS no cert validation
         run_test "HTTPS via SOCKS (insecure)" \
-            ./proxyprobe -target "$TARGET_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "http"
+            ./proxyprobe -target "$TARGET_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "http" -insecure
     fi
 }
 
 # Test WebSocket connections
 test_websocket_connections() {
     print_header "Testing WebSocket Connections"
-    
+
     # WS direct
     run_test "Direct WS connection (PING/PONG)" \
         ./proxyprobe -ws-url "$WS_URL" -payload-name "text"
-    
-    # WSS direct secure
-    run_test "Direct WSS connection (PING/PONG) secure" \
+
+    # WSS direct strict TLS
+    run_test "Direct WSS connection (PING/PONG secure)" \
         ./proxyprobe -ws-url "$WSS_URL" -payload-name "text"
-    
-    # WSS direct insecure
-    run_test "Direct WSS connection (PING/PONG) insecure" \
+
+    # WSS direct no cert validation
+    run_test "Direct WSS connection (PING/PONG insecure)" \
         ./proxyprobe -ws-url "$WSS_URL" -payload-name "text" -insecure
-    
-    # WS/WSS with Wireguard payload
+
+    if [ -n "$HTTP_PROXY" ]; then
+        # WSS via HTTP proxy strict TLS
+        run_test "WSS via HTTP proxy (PING/PONG secure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -http-proxy "$HTTP_PROXY" -payload-name "text"
+
+        # WSS via HTTP proxy no cert validation
+        run_test "WSS via HTTP proxy (PING/PONG insecure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -http-proxy "$HTTP_PROXY" -payload-name "text" -insecure
+    fi
+
+    if [ -n "$SOCKS_PROXY" ]; then
+        # WSS via SOCKS proxy strict TLS
+        run_test "WSS via SOCKS proxy (PING/PONG secure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -socks5-proxy "$SOCKS_PROXY" -payload-name "text"
+
+        # WSS via SOCKS proxy no cert validation
+        run_test "WSS via SOCKS proxy (PING/PONG insecure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -socks5-proxy "$SOCKS_PROXY" -payload-name "text" -insecure
+    fi
+
+    # WS with Wireguard payload
     run_test "Direct WS connection (Wireguard)" \
         ./proxyprobe -ws-url "$WS_URL" -payload-name "wireguard"
-    
-    # WSS with Wireguard payload secure
-    run_test "Direct WSS connection (Wireguard) secure" \
+
+    # WSS with Wireguard payload strict TLS
+    run_test "Direct WSS connection (Wireguard secure)" \
         ./proxyprobe -ws-url "$WSS_URL" -payload-name "wireguard"
-    
-    # WSS with Wireguard payload insecure
-    run_test "Direct WSS connection (Wireguard) insecure" \
+
+    # WSS with Wireguard payload no cert validation
+    run_test "Direct WSS connection (Wireguard insecure)" \
         ./proxyprobe -ws-url "$WSS_URL" -payload-name "wireguard" -insecure
+
+    if [ -n "$HTTP_PROXY" ]; then
+        # WSS with Wireguard via HTTP proxy strict TLS
+        run_test "WSS via HTTP proxy (Wireguard secure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -http-proxy "$HTTP_PROXY" -payload-name "wireguard"
+
+        # WSS with Wireguard via HTTP proxy no cert validation
+        run_test "WSS via HTTP proxy (Wireguard insecure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -http-proxy "$HTTP_PROXY" -payload-name "wireguard" -insecure
+    fi
+
+    if [ -n "$SOCKS_PROXY" ]; then
+        # WSS with Wireguard via SOCKS proxy strict TLS
+        run_test "WSS via SOCKS proxy (Wireguard secure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -socks5-proxy "$SOCKS_PROXY" -payload-name "wireguard"
+
+        # WSS with Wireguard via SOCKS proxy no cert validation
+        run_test "WSS via SOCKS proxy (Wireguard insecure)" \
+            ./proxyprobe -ws-url "$WSS_URL" -socks5-proxy "$SOCKS_PROXY" -payload-name "wireguard" -insecure
+    fi
 }
 
 # Test TCP with custom protocol (PING/PONG)
 test_tcp_protocol() {
     print_header "Testing TCP Protocol (PING/PONG)"
-    
+
     # Direct TCP
     run_test "Direct TCP connection (port 8080)" \
         ./proxyprobe -target "$TARGET_TCP" -payload-name "text"
-    
+
     run_test "Direct TCP connection (port 80)" \
         ./proxyprobe -target "$TARGET_TCP_ALT" -payload-name "text"
 
-    # Direct TCP+TLS
-    run_test "Direct TCP+TLS connection (port 8443)" \
+    # Direct TCP+TLS with and insecure
+    run_test "Direct TCP+TLS connection (port 8443 secure)" \
         ./proxyprobe -target "$TARGET_TCP_TLS" -tls -payload-name "text"
-    
-    run_test "Direct TCP+TLS connection (port 443)" \
+
+    run_test "Direct TCP+TLS connection (port 8443 insecure)" \
+        ./proxyprobe -target "$TARGET_TCP_TLS" -tls -payload-name "text" -insecure
+
+    run_test "Direct TCP+TLS connection (port 443 secure)" \
         ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -tls -payload-name "text"
-    
+
+    run_test "Direct TCP+TLS connection (port 443 insecure)" \
+        ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -tls -payload-name "text" -insecure
+
     # Via HTTP Proxy
     if [ -n "$HTTP_PROXY" ]; then
         run_test "TCP via HTTP proxy (port 8080)" \
             ./proxyprobe -target "$TARGET_TCP" -http-proxy "$HTTP_PROXY" -payload-name "text"
-        
+
         run_test "TCP via HTTP proxy (port 80)" \
             ./proxyprobe -target "$TARGET_TCP_ALT" -http-proxy "$HTTP_PROXY" -payload-name "text"
-        
-        run_test "TCP+TLS via HTTP proxy (port 8443)" \
+
+        run_test "TCP+TLS via HTTP proxy (port 8443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "text"
-        
-        run_test "TCP+TLS via HTTP proxy (port 443)" \
+
+        run_test "TCP+TLS via HTTP proxy (port 8443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "text" -insecure
+
+        run_test "TCP+TLS via HTTP proxy (port 443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -http-proxy "$HTTP_PROXY" -tls -payload-name "text"
+
+        run_test "TCP+TLS via HTTP proxy (port 443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -http-proxy "$HTTP_PROXY" -tls -payload-name "text" -insecure
     fi
-    
+
     # Via SOCKS Proxy
     if [ -n "$SOCKS_PROXY" ]; then
         run_test "TCP via SOCKS proxy (port 8080)" \
             ./proxyprobe -target "$TARGET_TCP" -socks5-proxy "$SOCKS_PROXY" -payload-name "text"
-        
+
         run_test "TCP via SOCKS proxy (port 80)" \
             ./proxyprobe -target "$TARGET_TCP_ALT" -socks5-proxy "$SOCKS_PROXY" -payload-name "text"
-        
-        run_test "TCP+TLS via SOCKS proxy (port 8443)" \
+
+        run_test "TCP+TLS via SOCKS proxy (port 8443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "text"
-        
-        run_test "TCP+TLS via SOCKS proxy (port 443)" \
+
+        run_test "TCP+TLS via SOCKS proxy (port 8443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "text" -insecure
+
+        run_test "TCP+TLS via SOCKS proxy (port 443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "text"
+
+        run_test "TCP+TLS via SOCKS proxy (port 443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "text" -insecure
     fi
 }
 
 # Test Wireguard protocol
 test_wireguard_protocol() {
     print_header "Testing Wireguard Protocol"
-    
-    # Direct
+
+    # Direct (non-TLS tests remain the same)
     run_test "Direct Wireguard connection (port 8080)" \
         ./proxyprobe -target "$TARGET_TCP" -payload-name "wireguard"
-    
+
     run_test "Direct Wireguard connection (port 80)" \
         ./proxyprobe -target "$TARGET_TCP_ALT" -payload-name "wireguard"
-    
-    # Direct TLS
-    run_test "Direct Wireguard+TLS connection (port 8443)" \
+
+    # Direct TLS with and insecure
+    run_test "Direct Wireguard+TLS connection (port 8443 secure)" \
         ./proxyprobe -target "$TARGET_TCP_TLS" -tls -payload-name "wireguard"
-    
-    run_test "Direct Wireguard+TLS connection (port 443)" \
+
+    run_test "Direct Wireguard+TLS connection (port 8443 insecure)" \
+        ./proxyprobe -target "$TARGET_TCP_TLS" -tls -payload-name "wireguard" -insecure
+
+    run_test "Direct Wireguard+TLS connection (port 443 secure)" \
         ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -tls -payload-name "wireguard"
-    
+
+    run_test "Direct Wireguard+TLS connection (port 443 insecure)" \
+        ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -tls -payload-name "wireguard" -insecure
+
     # Via HTTP Proxy
     if [ -n "$HTTP_PROXY" ]; then
+        # Non-TLS tests remain the same
         run_test "Wireguard via HTTP proxy (port 8080)" \
             ./proxyprobe -target "$TARGET_TCP" -http-proxy "$HTTP_PROXY" -payload-name "wireguard"
-        
+
         run_test "Wireguard via HTTP proxy (port 80)" \
             ./proxyprobe -target "$TARGET_TCP_ALT" -http-proxy "$HTTP_PROXY" -payload-name "wireguard"
-        
-        run_test "Wireguard+TLS via HTTP proxy (port 8443)" \
+
+        # Add secure/insecure variants for TLS
+        run_test "Wireguard+TLS via HTTP proxy (port 8443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "wireguard"
-        
-        run_test "Wireguard+TLS via HTTP proxy (port 443)" \
+
+        run_test "Wireguard+TLS via HTTP proxy (port 8443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS" -http-proxy "$HTTP_PROXY" -tls -payload-name "wireguard" -insecure
+
+        run_test "Wireguard+TLS via HTTP proxy (port 443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -http-proxy "$HTTP_PROXY" -tls -payload-name "wireguard"
+
+        run_test "Wireguard+TLS via HTTP proxy (port 443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -http-proxy "$HTTP_PROXY" -tls -payload-name "wireguard" -insecure
     fi
-    
+
     # Via SOCKS Proxy
     if [ -n "$SOCKS_PROXY" ]; then
+        # Non-TLS tests remain the same
         run_test "Wireguard via SOCKS proxy (port 8080)" \
             ./proxyprobe -target "$TARGET_TCP" -socks5-proxy "$SOCKS_PROXY" -payload-name "wireguard"
-        
+
         run_test "Wireguard via SOCKS proxy (port 80)" \
             ./proxyprobe -target "$TARGET_TCP_ALT" -socks5-proxy "$SOCKS_PROXY" -payload-name "wireguard"
-        
-        run_test "Wireguard+TLS via SOCKS proxy (port 8443)" \
+
+        # Add secure/insecure variants for TLS
+        run_test "Wireguard+TLS via SOCKS proxy (port 8443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "wireguard"
-        
-        run_test "Wireguard+TLS via SOCKS proxy (port 443)" \
+
+        run_test "Wireguard+TLS via SOCKS proxy (port 8443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "wireguard" -insecure
+
+        run_test "Wireguard+TLS via SOCKS proxy (port 443 secure)" \
             ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "wireguard"
+
+        run_test "Wireguard+TLS via SOCKS proxy (port 443 insecure)" \
+            ./proxyprobe -target "$TARGET_TCP_TLS_ALT" -socks5-proxy "$SOCKS_PROXY" -tls -payload-name "wireguard" -insecure
     fi
 }
 
 # Add this new function before main()
 print_summary() {
     print_header "Test Summary"
-    
+
     echo -e "\n${BLUE}────────────────────────────────────────────────────────────${NC}"
     echo -e "${GREEN}PASSED TESTS${NC}"
     echo -e "${BLUE}────────────────────────────────────────────────────────────${NC}"
     for test in "${PASSED_TESTS[@]}"; do
         printf "${GREEN}✓${NC} %s\n" "$test"
     done
-    
+
     if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
         echo -e "${BLUE}────────────────────────────────────────────────────────────${NC}"
         echo -e "${RED}FAILED TESTS${NC}"
@@ -255,7 +335,7 @@ print_summary() {
             printf "${RED}✗${NC} %s\n" "$test"
         done
     fi
-    
+
     echo -e "${BLUE}────────────────────────────────────────────────────────────${NC}"
     echo -e "SUMMARY"
     echo -e "${BLUE}────────────────────────────────────────────────────────────${NC}"
@@ -271,18 +351,18 @@ main() {
     echo "Target: $TARGET_HOST"
     [ -n "$HTTP_PROXY" ] && echo "HTTP Proxy: $HTTP_PROXY"
     [ -n "$SOCKS_PROXY" ] && echo "SOCKS Proxy: $SOCKS_PROXY"
-    
+
     test_direct_connections
     test_http_proxy_connections
     test_socks_proxy_connections
     test_websocket_connections
     test_tcp_protocol
     test_wireguard_protocol
-    
+
     print_summary
-    
+
     # Exit with failure if any tests failed
     [ ${#FAILED_TESTS[@]} -eq 0 ]
 }
 
-main "$@" 
+main "$@"

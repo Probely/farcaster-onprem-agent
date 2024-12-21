@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	defaultConnectTimeout = 30 * time.Second
-	defaultReadTimeout    = 20 * time.Second
+	defaultConnectTimeout = 15 * time.Second
+	defaultReadTimeout    = 15 * time.Second
 
 	// WireGuard test keys
 	wireguardInitiatordPrivateKey = ""
@@ -116,21 +116,41 @@ func (p *Proxy) connectHTTP(addr string) (*net.TCPConn, error) {
 	return tcpConn, nil
 }
 
-func (p *Proxy) connectSOCKS5(addr string) (*net.TCPConn, error) {
+func (p *Proxy) connectSOCKS5(addr string) (net.Conn, error) {
 	log.Printf("Connecting to SOCKS5 proxy %s for target %s...", p.socks5Proxy.Host, addr)
-	dialer, err := proxy.SOCKS5("tcp", p.socks5Proxy.Host, nil, proxy.Direct)
+
+	// Create a custom dialer with timeout for the SOCKS5 proxy connection
+	contextDialer := &net.Dialer{
+		Timeout: defaultConnectTimeout,
+	}
+
+	// Create SOCKS5 dialer with our timeout-enabled contextDialer
+	dialer, err := proxy.SOCKS5("tcp", p.socks5Proxy.Host, nil, contextDialer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 	}
-	conn, err := dialer.Dial("tcp", addr)
+
+	// Use context with timeout for the entire SOCKS5 connection process
+	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectTimeout)
+	defer cancel()
+
+	// Type assert to get the ContextDialer interface
+	contextDialer2, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, fmt.Errorf("failed to create context dialer for SOCKS5 proxy")
+	}
+
+	// Use DialContext instead of Dial to respect timeouts
+	conn, err := contextDialer2.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to SOCKS5 proxy: %w", err)
 	}
+
 	log.Printf("Connected through SOCKS5 proxy")
-	return conn.(*net.TCPConn), nil
+	return conn, nil
 }
 
-func testTCPTransport(conn *net.TCPConn, payload []byte, useTLS bool, insecure bool, connType string, host string, payloadName string) error {
+func testTCPTransport(conn net.Conn, payload []byte, useTLS bool, insecure bool, connType string, host string, payloadName string) error {
 	var rw io.ReadWriter = conn
 	if useTLS {
 		log.Printf("Starting TLS handshake (%s)...", connType)
@@ -241,6 +261,7 @@ func testSOCKS5ProxyTransport(socks5Proxy, target string, payload []byte, useTLS
 	if err != nil {
 		return fmt.Errorf("failed to connect to proxy: %w", err)
 	}
+	defer conn.Close()
 	return testTCPTransport(conn, payload, useTLS, insecure, fmt.Sprintf("socks5 proxy: %s", socks5Proxy), host, payloadName)
 }
 
