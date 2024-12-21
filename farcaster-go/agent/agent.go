@@ -148,13 +148,15 @@ func (a *Agent) UpTCP() error {
 		return fmt.Errorf("invalid tunnel address: %w", err)
 	}
 
-	// Create a TCP bind.
 	host, _, err := net.SplitHostPort(cfg.Peers[0].Endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint: %w", err)
 	}
-	conn := wireguard.NewRobustTCPConn(net.JoinHostPort(host, "443"))
-	bind := wireguard.NewTCPBind(&srcAddr, conn, a.log)
+	conn := wireguard.NewRobustTCPConn(net.JoinHostPort(host, "443"), a.log)
+	bind, err := wireguard.NewTCPBind(&srcAddr, conn, a.log)
+	if err != nil {
+		return fmt.Errorf("failed to create TCP bind: %w", err)
+	}
 
 	return a.up(bind)
 }
@@ -304,73 +306,70 @@ func (a *Agent) Close() {
 }
 
 func (a *Agent) WaitForConnection(maxTries int) error {
+	if err := a.Up(); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
+
 	if a.tunDev == nil {
 		return fmt.Errorf("tunnel not configured")
 	}
 
-	// Try to connect to agent hub using UDP 443. If it fails, try again using
-	// UDP 53 (DNS). Hopefully, this helps us to work around firewalls that block
-	// UDP 443.
 	tunCfg := a.cfg.Files["wg-tunnel.conf"]
 	hub := tunCfg.Peers[0]
-	for i := 0; i < maxTries*2; i++ {
-		if i == maxTries {
-			// Fallback to UDP 53.
-			hub.Endpoint = strings.Replace(tunCfg.Peers[0].Endpoint, ":443", ":53", 1)
-			err := a.tunDev.IpcSet(tunCfg.UAPIConfig())
-			if err != nil {
-				return fmt.Errorf("could not configure tunnel: %w", err)
-			}
-		}
 
-		// Our only peer is the agent hub. If we have a handshake time, we are
-		// connected.
-		wgStats, err := wireguard.DeviceStats(a.tunDev)
-		if err != nil {
-			return fmt.Errorf("failed getting tunnel stats: %w", err)
-		}
-
-		a.log.Infof("Connecting to %s UDP (try %d/%d)...", hub.Endpoint, i+1, maxTries*2)
-
-		if wgStats.LastHandshakeTimeSec > 0 {
-			a.State.SetStatus(StatusConnected)
-			a.State.ConnectionType = ConnectionUDP
-			return nil
-		}
-
-		time.Sleep(5 * time.Second)
+	// Try UDP 443 first
+	if err := a.tryConnection("UDP", hub.Endpoint); err == nil {
+		return nil
 	}
 
-	// If we failed to connect using UDP, try to connect using TCP.
+	// Try TCP as fallback.
 	a.log.Warnf("Failed to connect using UDP, trying TCP...")
 	a.Close()
-	a.UpTCP()
-
-	for i := 0; i < maxTries; i++ {
-		// Our only peer is the agent hub. If we have a handshake time, we are
-		// connected.
-		wgStats, err := wireguard.DeviceStats(a.tunDev)
-		if err != nil {
-			return fmt.Errorf("failed getting tunnel stats: %w", err)
-		}
-
-		host, _, err := net.SplitHostPort(hub.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid endpoint: %w", err)
-		}
-		addr := net.JoinHostPort(host, "443")
-		a.log.Infof("Connecting to %s TCP (try %d/%d)...", addr, i+1, maxTries)
-
-		if wgStats.LastHandshakeTimeSec > 0 {
-			a.State.SetStatus(StatusConnected)
-			a.State.ConnectionType = ConnectionTCP
-			return nil
-		}
-
-		time.Sleep(5 * time.Second)
+	if err := a.UpTCP(); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	return fmt.Errorf("giving up after %d tries", maxTries*3)
+	if err := a.tryConnection("TCP", hub.Endpoint); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("failed to connect to the agent hub")
+}
+
+func (a *Agent) tryConnection(protocol, endpoint string) error {
+	a.log.Infof("Connecting to %s %s (will wait up to 30 seconds)...", endpoint, protocol)
+
+	startTime := time.Now()
+	checkTicker := time.NewTicker(500 * time.Millisecond)
+	logTicker := time.NewTicker(5 * time.Second)
+	defer checkTicker.Stop()
+	defer logTicker.Stop()
+
+	for time.Since(startTime) < 30*time.Second {
+		select {
+		case <-checkTicker.C:
+			wgStats, err := wireguard.DeviceStats(a.tunDev)
+			if err != nil {
+				return fmt.Errorf("failed getting tunnel stats: %w", err)
+			}
+
+			if wgStats.LastHandshakeTimeSec > 0 {
+				a.State.SetStatus(StatusConnected)
+				if protocol == "TCP" {
+					a.State.ConnectionType = ConnectionTCP
+				} else {
+					a.State.ConnectionType = ConnectionUDP
+				}
+				return nil
+			}
+
+		case <-logTicker.C:
+			elapsed := int(time.Since(startTime).Seconds())
+			a.log.Infof("Waiting for connection... %d/30 seconds", elapsed)
+		}
+	}
+
+	return fmt.Errorf("connection attempt timed out")
 }
 
 // UpdateState periodically updates the agent state.
