@@ -152,8 +152,7 @@ func (a *Agent) UpTCP() error {
 	if err != nil {
 		return fmt.Errorf("invalid endpoint: %w", err)
 	}
-	conn := wireguard.NewRobustTCPConn(net.JoinHostPort(host, "443"), a.log)
-	bind, err := wireguard.NewTCPBind(&srcAddr, conn, a.log)
+	bind, err := wireguard.NewTCPBind(&srcAddr, net.JoinHostPort(host, "443"), a.log)
 	if err != nil {
 		return fmt.Errorf("failed to create TCP bind: %w", err)
 	}
