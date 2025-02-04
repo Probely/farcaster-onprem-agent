@@ -35,11 +35,6 @@ const (
 
 var (
 	configClient = createHTTPClient()
-
-	defaultAPIURLs = []string{
-		"https://api.eu.probely.com",
-		"https://api.us.probely.com",
-	}
 )
 
 // createHTTPClient creates an HTTP client with the appropriate TLS configuration
@@ -117,29 +112,19 @@ type Peer struct {
 type FarcasterConfig struct {
 	Files map[string]*WireGuardConfig
 
-	token string
-	log   *zap.SugaredLogger
+	token   string
+	apiURLs []string
+	log     *zap.SugaredLogger
 }
 
 // NewFarcasterConfig returns a new Farcaster agent configuration.
-func NewFarcasterConfig(token string, logger *zap.SugaredLogger) *FarcasterConfig {
+func NewFarcasterConfig(token string, apiURLs []string, logger *zap.SugaredLogger) *FarcasterConfig {
 	return &FarcasterConfig{
-		Files: make(map[string]*WireGuardConfig),
-
-		token: strings.TrimSpace(token),
-		log:   logger,
+		Files:   make(map[string]*WireGuardConfig),
+		token:   strings.TrimSpace(token),
+		apiURLs: apiURLs,
+		log:     logger,
 	}
-}
-
-// Returns the Probely API URLs
-func (c *FarcasterConfig) apiURLs() []string {
-	url := os.Getenv("FARCASTER_API_URL")
-	if url != "" {
-		// Remove any beginning or trailing quotes and spaces.
-		url = strings.Trim(url, "\"' ")
-		return []string{url}
-	}
-	return defaultAPIURLs
 }
 
 // Load fetches and parses the agent configuration from Probely's API.
@@ -148,7 +133,7 @@ func (c *FarcasterConfig) Load() error {
 
 	// Fetch the config using the API.
 	var data []byte
-	for _, url := range c.apiURLs() {
+	for _, url := range c.apiURLs {
 		c.log.Infof("Trying to fetch agent configuration from %s...", url)
 		if data, err = c.fetch(url); err == nil {
 			break

@@ -1,7 +1,9 @@
 package farcasterd
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -9,7 +11,7 @@ import (
 )
 
 // Logger initialization.
-func initLogger(debug bool, path string) *zap.SugaredLogger {
+func initLogger(debug bool, path string) (*zap.SugaredLogger, error) {
 	var level zap.AtomicLevel
 
 	if debug {
@@ -33,9 +35,20 @@ func initLogger(debug bool, path string) *zap.SugaredLogger {
 	// Use lumberjack to rotate logs.
 	var w zapcore.WriteSyncer
 	if path != "" {
+		// Create the directory if it doesn't exist.
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create directory for log file: %v", err)
+		}
+
+		// Set platform-specific permissions if needed
+		if err := lockDownPermissions(dir); err != nil {
+			return nil, fmt.Errorf("failed to set directory permissions: %v", err)
+		}
+
 		w = zapcore.AddSync(&lumberjack.Logger{
 			Filename:   path,
-			MaxSize:    1, // megabytes
+			MaxSize:    1, // MB
 			MaxBackups: 1,
 			MaxAge:     60, // days
 		})
@@ -47,5 +60,5 @@ func initLogger(debug bool, path string) *zap.SugaredLogger {
 	core := zapcore.NewCore(enc, w, level)
 	logger := zap.New(core)
 
-	return logger.Sugar()
+	return logger.Sugar(), nil
 }

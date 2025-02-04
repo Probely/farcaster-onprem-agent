@@ -80,9 +80,10 @@ func (s *state) Status() status {
 type Agent struct {
 	// Agent state.
 	State *state
-
 	// API token.
 	token string
+	// API URLs.
+	apiURLs []string
 	// Configuration.
 	cfg *config.FarcasterConfig
 	// Tunnel.
@@ -91,24 +92,23 @@ type Agent struct {
 	// Gateway.
 	gw    tun.Device
 	gwDev *device.Device
-
 	// Connection count (including previous connections).
-	conns atomic.Uint32
-
+	conns  atomic.Uint32
 	cancel chan struct{}
 	log    *zap.SugaredLogger
 }
 
 // New creates a new agent.
-func New(token string, logger *zap.SugaredLogger) *Agent {
+func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
 	return &Agent{
-		State:  newState(),
-		token:  token,
-		cancel: make(chan struct{}),
-		log:    logger,
+		State:   newState(),
+		token:   token,
+		apiURLs: apiURLs,
+		cancel:  make(chan struct{}),
+		log:     logger,
 	}
 }
 
@@ -124,7 +124,7 @@ func (a *Agent) loadConfig() (*config.FarcasterConfig, error) {
 	}
 
 	// Fetch the encrypted agent configuration using Probely's API.
-	cfg := config.NewFarcasterConfig(string(t), a.log)
+	cfg := config.NewFarcasterConfig(string(t), a.apiURLs, a.log)
 	if err := cfg.Load(); err != nil {
 		return nil, err
 	}
@@ -304,7 +304,7 @@ func (a *Agent) Close() {
 	}
 }
 
-func (a *Agent) WaitForConnection(maxTries int) error {
+func (a *Agent) ConnectWait(maxTries int) error {
 	if err := a.Up(); err != nil {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
@@ -317,7 +317,7 @@ func (a *Agent) WaitForConnection(maxTries int) error {
 	hub := tunCfg.Peers[0]
 
 	// Try UDP 443 first
-	if err := a.tryConnection("UDP", hub.Endpoint); err == nil {
+	if err := a.checkConnection("UDP", hub.Endpoint); err == nil {
 		return nil
 	}
 
@@ -328,14 +328,14 @@ func (a *Agent) WaitForConnection(maxTries int) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	if err := a.tryConnection("TCP", hub.Endpoint); err == nil {
+	if err := a.checkConnection("TCP", hub.Endpoint); err == nil {
 		return nil
 	}
 
 	return fmt.Errorf("failed to connect to the agent hub")
 }
 
-func (a *Agent) tryConnection(protocol, endpoint string) error {
+func (a *Agent) checkConnection(protocol, endpoint string) error {
 	a.log.Infof("Connecting to %s %s (will wait up to 30 seconds)...", endpoint, protocol)
 
 	startTime := time.Now()
@@ -368,7 +368,7 @@ func (a *Agent) tryConnection(protocol, endpoint string) error {
 		}
 	}
 
-	return fmt.Errorf("connection attempt timed out")
+	return fmt.Errorf("connection timed out")
 }
 
 // UpdateState periodically updates the agent state.
