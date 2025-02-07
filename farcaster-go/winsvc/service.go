@@ -6,6 +6,7 @@
 package winsvc
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,11 +216,35 @@ func RunElevated() error {
 		return fmt.Errorf("cannot determine absolute path: %v", err)
 	}
 
-	// Create a temporary batch file to run the elevated command
-	tmpDir := os.TempDir()
-	batchFile := filepath.Join(tmpDir, "farcaster_elevate.bat")
+	// Helper function to escape Windows command line arguments
+	escapeArg := func(arg string) string {
+		// Escape ^ first since it's used as escape character
+		arg = strings.ReplaceAll(arg, "^", "^^")
+		// Escape other special characters
+		arg = strings.ReplaceAll(arg, "&", "^&")
+		arg = strings.ReplaceAll(arg, "<", "^<")
+		arg = strings.ReplaceAll(arg, ">", "^>")
+		arg = strings.ReplaceAll(arg, "|", "^|")
+		arg = strings.ReplaceAll(arg, "%", "%%")
+		// Wrap the entire argument in quotes and escape any existing quotes
+		return `"` + strings.ReplaceAll(arg, `"`, `\"`) + `"`
+	}
 
-	// Construct the command with all arguments
+	// Escape each argument individually
+	escapedArgs := make([]string, len(os.Args[1:]))
+	for i, arg := range os.Args[1:] {
+		escapedArgs[i] = escapeArg(arg)
+	}
+
+	// Create a temporary batch file with a random name to avoid conflicts
+	tmpDir := os.TempDir()
+	randBytes := make([]byte, 16)
+	if _, err := rand.Read(randBytes); err != nil {
+		return fmt.Errorf("failed to generate random filename: %v", err)
+	}
+	batchFile := filepath.Join(tmpDir, fmt.Sprintf("farcaster_elevate_%x.bat", randBytes))
+
+	// Construct the command with escaped arguments
 	cmdLine := fmt.Sprintf(`@echo off
 echo Running command with administrative privileges...
 echo.
@@ -233,7 +258,7 @@ if errorlevel 1 (
     echo This window will close automatically in 10 seconds...
     timeout /t 10 /nobreak >nul
 )
-del "%s"`, exePath, strings.Join(os.Args[1:], " "), batchFile)
+del "%s"`, exePath, strings.Join(escapedArgs, " "), batchFile)
 
 	// Write the batch file
 	if err := os.WriteFile(batchFile, []byte(cmdLine), 0600); err != nil {

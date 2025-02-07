@@ -216,6 +216,7 @@ func getAPIURLs(apiURL string) []string {
 	}
 	envURL := os.Getenv(envAPIURLName)
 	if envURL != "" {
+		envURL = strings.Trim(envURL, "\"' ")
 		return []string{envURL}
 	}
 	return defaultAPIURLs
