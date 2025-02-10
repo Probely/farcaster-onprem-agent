@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sys/windows/svc"
 	"probely.com/farcaster/config"
+	"probely.com/farcaster/osutils"
 	"probely.com/farcaster/settings"
 	"probely.com/farcaster/winsvc"
 )
@@ -125,7 +126,7 @@ var installCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		// Set ACLs on the agent directory to restrict access to administrators and the service account.
-		if err := lockDownPermissions(serviceDir); err != nil {
+		if err := osutils.LockDownPermissions(serviceDir); err != nil {
 			logger.Errorf("Failed to set ACLs on service directory: %v", err)
 			os.Exit(1)
 		}

@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	acceptedRequests = svc.AcceptStop | svc.AcceptShutdown
+	acceptedRequests    = svc.AcceptStop | svc.AcceptShutdown
+	agentFailedExitCode = 1
 )
 
 type Service struct {
@@ -60,8 +61,8 @@ loop:
 		case err := <-errCh:
 			if err != nil {
 				s.log.Errorf("Agent failed: %v", err)
-				status <- svc.Status{State: svc.Stopped}
-				return false, 1
+				status <- svc.Status{State: svc.Stopped, Accepts: acceptedRequests, Win32ExitCode: agentFailedExitCode}
+				return false, agentFailedExitCode
 			}
 			s.log.Info("Agent successfully started")
 		case c := <-r:
@@ -265,6 +266,9 @@ del "%s"`, exePath, strings.Join(escapedArgs, " "), batchFile)
 		return fmt.Errorf("failed to create batch file: %v", err)
 	}
 
+	// Ensure the batch file is deleted, even if ShellExecute fails.
+	defer os.Remove(batchFile)
+
 	// Launch the batch file with elevation
 	verbPtr, err := windows.UTF16PtrFromString("runas")
 	if err != nil {
@@ -278,7 +282,6 @@ del "%s"`, exePath, strings.Join(escapedArgs, " "), batchFile)
 	// Launch the elevated process
 	err = windows.ShellExecute(0, verbPtr, batchPtr, nil, nil, windows.SW_SHOW)
 	if err != nil {
-		os.Remove(batchFile)
 		return fmt.Errorf("ShellExecute failed: %v", err)
 	}
 

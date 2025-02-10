@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"probely.com/farcaster/osutils"
 )
 
 // Logger initialization.
@@ -42,7 +43,7 @@ func initLogger(debug bool, path string) (*zap.SugaredLogger, error) {
 		}
 
 		// Set platform-specific permissions if needed
-		if err := lockDownPermissions(dir); err != nil {
+		if err := osutils.LockDownPermissions(dir); err != nil {
 			return nil, fmt.Errorf("failed to set directory permissions: %v", err)
 		}
 
