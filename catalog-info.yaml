@@ -1,0 +1,8 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: farcaster-onprem-agent
+spec:
+  type: external-tooling
+  lifecycle: "-"
+  owner: probely-engine
