@@ -1,37 +1,44 @@
-CONTAINER=farcaster-onprem-agent
-REPO=probely/$(CONTAINER)
-PLATFORMS=linux/arm64,linux/amd64
-VER_MAJOR=$(shell echo ${VERSION} | awk -F'.' '{print $$1}')
-VER_MINOR=$(shell echo ${VERSION} | awk -F'.' '{print $$2}')
+CONTAINER := farcaster-onprem-agent
+REPO := probely/$(CONTAINER)
+PLATFORMS := linux/arm64,linux/amd64
 
-.PHONY: build build-local clean prepare check-env
+VERSION ?= $(error VERSION is undefined. Usage: VERSION=x.y.z make [target])
+VER_MAJOR := $(shell echo '$(VERSION)' | cut -d. -f1)
+VER_MINOR := $(shell echo '$(VERSION)' | cut -d. -f2)
 
-build: check-env
-	docker buildx build --builder multiarch \
+TAGS := -t $(REPO):v$(VER_MAJOR) \
+	-t $(REPO):v$(VER_MAJOR).$(VER_MINOR) \
+	-t $(REPO):v$(VERSION)
+
+BUILDX_ARGS := --builder multiarch \
+	--build-arg "VERSION=$(VERSION)"
+
+.PHONY: all build build-local clean prepare check-version
+
+all: build
+
+build: check-version prepare
+	docker buildx build $(BUILDX_ARGS) \
 		--platform $(PLATFORMS) \
-		--build-arg "VERSION=${VERSION}" \
-		-t $(REPO):v$(VER_MAJOR) -t $(REPO):v$(VER_MAJOR).$(VER_MINOR) -t $(REPO):v$(VERSION) \
+		$(TAGS) \
 		--push .
 
-build-local: check-env
-	$(eval PLATFORMS=linux/amd64)
-	docker buildx build --builder multiarch \
-		--platform $(PLATFORMS) \
-		--build-arg "VERSION=${VERSION}" \
+build-local: check-version prepare
+	docker buildx build $(BUILDX_ARGS) \
+		--platform linux/amd64 \
 		-t $(REPO):v$(VERSION) \
-		--load \
-		.
+		--load .
 
 clean:
-	docker buildx --builder multiarch prune
+	docker buildx --builder multiarch prune -f
+
 prepare:
 	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	docker buildx create --name multiarch --driver docker-container
+	docker buildx create --name multiarch --driver docker-container --use || true
 	docker buildx inspect --builder multiarch --bootstrap
 
-check-env:
-ifndef VERSION
-	$(error VERSION env variable is undefined. Set it with `VERSION=x.y.z make ...`)
-endif
-	@# VERSION must be a valid semver
-	@echo ${VERSION} | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || (echo "VERSION must be a valid semver" && exit 1)
+check-version:
+	@if ! echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "ERROR: VERSION must be a valid semver (x.y.z)"; \
+		exit 1; \
+	fi

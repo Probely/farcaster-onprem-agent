@@ -18,7 +18,7 @@ func TestAgentLifecycle(t *testing.T) {
 		t.Errorf("Failed to start agent: %v", err)
 	}
 
-	err = a.WaitForConnection(5)
+	err = a.ConnectWait(5)
 	if err != nil {
 		t.Errorf("Failed to connect to agent hub: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestAgentLifecycle(t *testing.T) {
 		t.Errorf("Failed to start agent: %v", err)
 	}
 
-	err = b.WaitForConnection(5)
+	err = b.ConnectWait(5)
 	if err != nil {
 		t.Errorf("Failed to connect to agent hub: %v", err)
 	}

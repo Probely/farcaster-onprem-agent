@@ -3,7 +3,10 @@ package settings
 import "runtime"
 
 const (
-	Name = "farcasterd"
+	Filename    = "farcasterd"
+	Name        = "Probely Farcaster"
+	ServiceName = Name + " Agent"
+	Description = Name + " creates a VPN to Probely to allow internal network scanning."
 )
 
 func LogPath() string {
