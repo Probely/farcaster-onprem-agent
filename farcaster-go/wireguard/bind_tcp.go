@@ -79,6 +79,8 @@ func NewTCPBind(src *netip.AddrPort, addr string, log *zap.SugaredLogger) (*TCPB
 		writebuf: *bytes.NewBuffer(make([]byte, 0, writeBufferSize)),
 	}
 
+	b.conn.Store((*connWrapper)(nil))
+
 	return b, nil
 }
 

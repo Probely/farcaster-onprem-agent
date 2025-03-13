@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -97,6 +98,8 @@ type Agent struct {
 	conns  atomic.Uint32
 	cancel chan struct{}
 	log    *zap.SugaredLogger
+	// WaitGroup to track background goroutines
+	wg sync.WaitGroup
 }
 
 // New creates a new agent.
@@ -263,8 +266,9 @@ func (a *Agent) up(bind conn.Bind) error {
 
 	// Increment the connection count.
 	a.conns.Add(1)
+	connID := a.conns.Load()
 
-	go a.updateState(a.conns.Load())
+	go a.updateState(connID)
 
 	return nil
 }
@@ -278,34 +282,46 @@ func (a *Agent) Down() error {
 }
 
 func (a *Agent) Close() {
-	// Stop any goroutine that is running for this connection.
-	a.cancel <- struct{}{}
+	// Signal goroutines to stop
+	select {
+	case a.cancel <- struct{}{}:
+	default:
+		// Channel might be full or nil. Just ignore.
+	}
 
+	// Wait for background goroutines to exit
+	a.wg.Wait()
+
+	// Stop the devices before closing resources.
+	if a.tunDev != nil {
+		a.tunDev.Down()
+		time.Sleep(250 * time.Millisecond)
+		a.tunDev.Close()
+		a.tunDev = nil
+	}
+
+	if a.gwDev != nil {
+		a.gwDev.Down()
+		time.Sleep(250 * time.Millisecond)
+		a.gwDev.Close()
+		a.gwDev = nil
+	}
+
+	// Close the TUN devices
 	if a.tun != nil {
 		err := a.tun.Close()
 		if err != nil {
-			a.log.Errorf("Failed to close tunnel: %v", err)
+			a.log.Warnf("Failed to close tunnel: %v", err)
 		}
 		a.tun = nil
-	}
-
-	if a.tunDev != nil {
-		a.tunDev.Close()
-		a.tunDev = nil
 	}
 
 	if a.gw != nil {
 		err := a.gw.Close()
 		if err != nil {
-			a.log.Errorf("Failed to close gateway: %v", err)
+			a.log.Warnf("Failed to close gateway: %v", err)
 		}
 		a.gw = nil
-	}
-
-	// Close the tunnel and the gateway.
-	if a.gwDev != nil {
-		a.gwDev.Close()
-		a.gwDev = nil
 	}
 }
 
@@ -331,9 +347,11 @@ func (a *Agent) ConnectWait(maxTries int) error {
 	if err := connect(a.Up, "UDP"); err == nil {
 		return nil
 	}
+
+	a.log.Info("UDP connection failed. Cleaning up...")
 	a.Close()
 
-	a.log.Info("UDP connection failed. Trying TCP...")
+	a.log.Info("Trying TCP...")
 	return connect(a.UpTCP, "TCP")
 }
 
@@ -375,6 +393,9 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 
 // UpdateState periodically updates the agent state.
 func (a *Agent) updateState(conn uint32) {
+	a.wg.Add(1)
+	defer a.wg.Done()
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
