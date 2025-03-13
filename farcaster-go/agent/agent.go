@@ -121,7 +121,6 @@ func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 // as-is.
 func (a *Agent) loadConfig() error {
 	if a.cfg != nil {
-		a.log.Infof("Using cached configuration")
 		return nil
 	}
 
@@ -229,11 +228,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	// Create a netstack-based TUN device. We use its userspace TCP/IP stack to
 	// route traffic from remote peers to the local network without requiring
 	// special privileges or devices (e.g. /dev/net/tun).
-	mtu := gwCfg.MTU
-	// Clamp MTU to 1340 to avoid issues with broken path MTU discovery.
-	if mtu > 1340 {
-		mtu = 1340
-	}
+	mtu := min(gwCfg.MTU, 1340)
 	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log)
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
@@ -282,7 +277,6 @@ func (a *Agent) Down() error {
 }
 
 func (a *Agent) Close() {
-	// Signal goroutines to stop
 	select {
 	case a.cancel <- struct{}{}:
 	default:
@@ -292,12 +286,19 @@ func (a *Agent) Close() {
 	// Wait for background goroutines to exit
 	a.wg.Wait()
 
-	// Stop the devices before closing resources.
-	if a.tunDev != nil {
-		a.tunDev.Down()
-		time.Sleep(250 * time.Millisecond)
-		a.tunDev.Close()
-		a.tunDev = nil
+	if a.gw != nil {
+		err := a.gw.Close()
+		if err != nil {
+			a.log.Warnf("Failed to close gateway: %v", err)
+		}
+		a.gw = nil
+	}
+	if a.tun != nil {
+		err := a.tun.Close()
+		if err != nil {
+			a.log.Warnf("Failed to close tunnel: %v", err)
+		}
+		a.tun = nil
 	}
 
 	if a.gwDev != nil {
@@ -307,21 +308,11 @@ func (a *Agent) Close() {
 		a.gwDev = nil
 	}
 
-	// Close the TUN devices
-	if a.tun != nil {
-		err := a.tun.Close()
-		if err != nil {
-			a.log.Warnf("Failed to close tunnel: %v", err)
-		}
-		a.tun = nil
-	}
-
-	if a.gw != nil {
-		err := a.gw.Close()
-		if err != nil {
-			a.log.Warnf("Failed to close gateway: %v", err)
-		}
-		a.gw = nil
+	if a.tunDev != nil {
+		a.tunDev.Down()
+		time.Sleep(250 * time.Millisecond)
+		a.tunDev.Close()
+		a.tunDev = nil
 	}
 }
 
@@ -402,7 +393,7 @@ func (a *Agent) updateState(conn uint32) {
 	for {
 		select {
 		case <-a.cancel:
-			a.log.Infof("Stopping agent state updater for connection %d", conn)
+			a.log.Infof("Stopped state updater for connection %d", conn)
 			return
 		case <-ticker.C:
 			dev := a.tunDev

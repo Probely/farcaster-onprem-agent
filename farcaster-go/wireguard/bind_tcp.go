@@ -107,8 +107,6 @@ func (b *TCPBind) setConn(conn net.Conn) {
 }
 
 func (b *TCPBind) clearConn() {
-	// Store a nil wrapper pointer (not nil connection inside wrapper)
-	// This ensures the type stored in atomic.Value never changes
 	b.conn.Store((*connWrapper)(nil))
 }
 
@@ -147,6 +145,7 @@ func (b *TCPBind) ensureConnection() (net.Conn, error) {
 }
 
 // closeConnection safely closes a specific connection if it matches the current one
+// Returns the error from the close operation
 func (b *TCPBind) closeConnection(conn net.Conn) error {
 	if conn == nil {
 		return nil
@@ -176,31 +175,31 @@ func (b *TCPBind) makeReceiveIPv4() wgconn.ReceiveFunc {
 			return 0, err
 		}
 
-		header := make([]byte, headerSize)
-		_, err = io.ReadFull(conn, header)
-		if err != nil {
+		var header uint16
+		// Read the packet header directly into the header
+		if err := binary.Read(conn, binary.BigEndian, &header); err != nil {
+			b.log.Warn("Failed to read packet header:", err)
 			b.closeConnection(conn)
 			return 0, err
 		}
 
-		pktSize := int(binary.BigEndian.Uint16(header))
-		if pktSize == 0 {
+		if header == 0 {
 			return 0, fmt.Errorf("invalid packet size: 0")
 		}
 
-		if len(bufs[0]) < pktSize {
-			return 0, fmt.Errorf("buffer size %d is smaller than packet size %d", len(bufs[0]), pktSize)
+		if len(bufs[0]) < int(header) {
+			return 0, fmt.Errorf("buffer size %d is smaller than packet size %d", len(bufs[0]), header)
 		}
 
 		// Read the packet payload
-		_, err = io.ReadFull(conn, bufs[0][:pktSize])
+		_, err = io.ReadFull(conn, bufs[0][:header])
 		if err != nil {
-			b.log.Warn("Failed to read packet data:", err)
 			b.closeConnection(conn)
+			b.log.Warn("Failed to read packet data:", err)
 			return 0, err
 		}
 
-		sizes[0] = pktSize
+		sizes[0] = int(header)
 		eps[0] = &TCPEndpoint{src: b.src, dst: b.dst}
 		return 1, nil
 	}
@@ -235,6 +234,7 @@ func (b *TCPBind) Close() error {
 	}
 
 	// closeConnection will handle its own locking
+	b.log.Info("Closing connection")
 	return b.closeConnection(b.getConn())
 }
 
@@ -292,10 +292,12 @@ func (b *TCPBind) flush() error {
 		n, err := conn.Write(data[written:])
 		if err != nil {
 			b.closeConnection(conn)
+			b.log.Warn("Failed to write data to connection:", err)
 			return err
 		}
 		if n == 0 {
 			b.closeConnection(conn)
+			b.log.Warn("Failed to write data to connection: 0 bytes written")
 			return fmt.Errorf("failed to write data to connection")
 		}
 		written += n

@@ -3,12 +3,15 @@ package agent
 import (
 	"os"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 var token = os.Getenv("FARCASTER_AGENT_TOKEN")
 
 func TestAgentLifecycle(t *testing.T) {
-	a := New(token, nil)
+	logger := zap.NewNop().Sugar()
+	a := New(token, nil, logger)
 	if a.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
@@ -34,7 +37,7 @@ func TestAgentLifecycle(t *testing.T) {
 	t.Logf("Closing agent a...")
 	a.Close()
 
-	b := New(token, nil)
+	b := New(token, nil, logger)
 	if b.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
