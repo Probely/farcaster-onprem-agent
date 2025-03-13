@@ -147,10 +147,10 @@ func runAgent(cfg agentConfig) {
 		exit(0)
 	}
 
-	// Function to start the agent.
 	startAgent := func() error {
 		a := agent.New(cfg.token, cfg.apiURLs, logger)
 		if err := a.ConnectWait(maxConnTries); err != nil {
+			a.Close()
 			return err
 		}
 		return nil

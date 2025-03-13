@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -112,10 +113,15 @@ func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 	}
 }
 
-func (a *Agent) loadConfig() (*config.FarcasterConfig, error) {
-	// Try to read the token from a file. This can be useful to avoid showing
-	// the token in the process list. If the token is not a file, it is used
-	// as-is.
+// Try to read the token from a file. This can be useful to avoid showing
+// the token in the process list. If the token is not a file, it is used
+// as-is.
+func (a *Agent) loadConfig() error {
+	if a.cfg != nil {
+		a.log.Infof("Using cached configuration")
+		return nil
+	}
+
 	t, err := os.ReadFile(a.token)
 	if err == nil {
 		a.log.Infof("Using token from file: %s", a.token)
@@ -124,21 +130,23 @@ func (a *Agent) loadConfig() (*config.FarcasterConfig, error) {
 	}
 
 	// Fetch the encrypted agent configuration using Probely's API.
-	cfg := config.NewFarcasterConfig(string(t), a.apiURLs, a.log)
-	if err := cfg.Load(); err != nil {
-		return nil, err
+	a.cfg = config.NewFarcasterConfig(string(t), a.apiURLs, a.log)
+	if err := a.cfg.Load(); err != nil {
+		return err
 	}
-
-	return cfg, nil
+	return nil
 }
 
 func (a *Agent) CheckToken() error {
 	// Load the configuration.
-	_, err := a.loadConfig()
-	return err
+	return a.loadConfig()
 }
 
 func (a *Agent) UpTCP() error {
+	if err := a.loadConfig(); err != nil {
+		return err
+	}
+
 	cfg := a.cfg.Files["wg-tunnel.conf"]
 	addr := strings.Split(cfg.Address, "/")[0]
 	port := cfg.ListenPort
@@ -165,15 +173,12 @@ func (a *Agent) Up() error {
 }
 
 func (a *Agent) up(bind conn.Bind) error {
-	// If the agent was already configured, just bring the tunnel up.
-	if a.tunDev != nil {
-		return a.tunDev.Up()
+	// Ensure that tunnels are not yet configured.
+	if a.tunDev != nil || a.gwDev != nil {
+		return fmt.Errorf("tunnels already configured: %v, %v", a.tunDev, a.gwDev)
 	}
 
-	var err error
-	// Load the configuration.
-	a.cfg, err = a.loadConfig()
-	if err != nil {
+	if err := a.loadConfig(); err != nil {
 		return err
 	}
 
@@ -198,7 +203,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	a.tun = wireguard.NewChannelTUN("tunnel", tunCfg.MTU)
 	a.tunDev = device.NewDevice(a.tun, bind, device.NewLogger(wgl, "tunnel: "))
 
-	err = a.tunDev.IpcSet(tunCfg.UAPIConfig())
+	err := a.tunDev.IpcSet(tunCfg.UAPIConfig())
 	if err != nil {
 		return fmt.Errorf("tunnel not configured: %w", err)
 	}
@@ -305,34 +310,31 @@ func (a *Agent) Close() {
 }
 
 func (a *Agent) ConnectWait(maxTries int) error {
-	if err := a.Up(); err != nil {
-		return fmt.Errorf("failed to start agent: %w", err)
+	connect := func(upFunc func() error, protocol string) error {
+		if err := upFunc(); err != nil {
+			return fmt.Errorf("failed to start agent: %w", err)
+		}
+		if a.tunDev == nil {
+			return fmt.Errorf("tunnel not configured")
+		}
+		hub := a.cfg.Files["wg-tunnel.conf"].Peers[0]
+		return a.checkConnection(protocol, hub.Endpoint)
 	}
 
-	if a.tunDev == nil {
-		return fmt.Errorf("tunnel not configured")
+	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))
+	if forceTCP {
+		a.log.Info("TCP connection forced. Connecting...")
+		return connect(a.UpTCP, "TCP")
 	}
 
-	tunCfg := a.cfg.Files["wg-tunnel.conf"]
-	hub := tunCfg.Peers[0]
-
-	// Try UDP 443 first
-	if err := a.checkConnection("UDP", hub.Endpoint); err == nil {
+	a.log.Info("Connecting via UDP...")
+	if err := connect(a.Up, "UDP"); err == nil {
 		return nil
 	}
-
-	// Try TCP as fallback.
-	a.log.Warnf("Failed to connect using UDP, trying TCP...")
 	a.Close()
-	if err := a.UpTCP(); err != nil {
-		return fmt.Errorf("failed to start agent: %w", err)
-	}
 
-	if err := a.checkConnection("TCP", hub.Endpoint); err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("failed to connect to the agent hub")
+	a.log.Info("UDP connection failed. Trying TCP...")
+	return connect(a.UpTCP, "TCP")
 }
 
 func (a *Agent) checkConnection(protocol, endpoint string) error {

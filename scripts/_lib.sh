@@ -399,8 +399,10 @@ function print_diagnostics() {
 	ip route show
 	echo
 	echo "-----iptables-----"
-	${IPT_CMD} -t filter -n -L -v
-	${IPT_CMD} -t nat -n -L -v
+	if [ -x "${IPT_CMD:-}" ]; then
+		${IPT_CMD} -t filter -n -L -v
+		${IPT_CMD} -t nat -n -L -v
+	fi
 	echo
 	echo "-----moproxy config-----"
 	cat /run/moproxy/config.ini || echo "No moproxy config found"
@@ -413,4 +415,9 @@ function debug_level() {
 
 is_moproxy_running() {
     pidof moproxy >/dev/null 2>&1
+}
+
+function check_kernel_wireguard() {
+  return $(ip link add wg-test type wireguard 2>/dev/null &&
+           ip link del wg-test > /dev/null 2>&1)
 }

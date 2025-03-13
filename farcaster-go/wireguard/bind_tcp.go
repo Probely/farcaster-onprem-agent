@@ -1,7 +1,6 @@
 package wireguard
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -22,7 +22,6 @@ const (
 	defaultWriteTimeout   = 20 * time.Second
 	batchSize             = 1               // If this is greater than 1, packet reading logic needs adjustment
 	writeBufferSize       = 1024 * 1024 * 1 // 1MB write buffer
-	readerBufferSize      = 1024 * 1024 * 1 // 1MB read buffer
 )
 
 var (
@@ -30,8 +29,14 @@ var (
 	_ wgconn.Bind     = (*TCPBind)(nil)
 )
 
+// connWrapper wraps any net.Conn implementation to provide a consistent type
+// for atomic.Value to store
+type connWrapper struct {
+	conn net.Conn
+}
+
 type TCPBind struct {
-	conn    net.Conn
+	conn    atomic.Value // stores *connWrapper
 	src     netip.AddrPort
 	dst     netip.AddrPort
 	log     *zap.SugaredLogger
@@ -40,9 +45,9 @@ type TCPBind struct {
 	open bool
 	wmu  sync.Mutex
 	rmu  sync.Mutex
+	cmu  sync.Mutex
 
 	writebuf bytes.Buffer
-	reader   *bufio.Reader
 	done     chan struct{}
 }
 
@@ -77,10 +82,47 @@ func NewTCPBind(src *netip.AddrPort, addr string, log *zap.SugaredLogger) (*TCPB
 	return b, nil
 }
 
-// ensureConnection tries to establish a connection if not already connected.
-func (b *TCPBind) ensureConnection() error {
-	if b.conn != nil {
+func (b *TCPBind) getConn() net.Conn {
+	val := b.conn.Load()
+	if val == nil {
 		return nil
+	}
+
+	wrapper, ok := val.(*connWrapper)
+	if !ok || wrapper == nil {
+		return nil
+	}
+
+	return wrapper.conn
+}
+
+func (b *TCPBind) setConn(conn net.Conn) {
+	if conn == nil {
+		b.clearConn()
+		return
+	}
+	b.conn.Store(&connWrapper{conn: conn})
+}
+
+func (b *TCPBind) clearConn() {
+	// Store a nil wrapper pointer (not nil connection inside wrapper)
+	// This ensures the type stored in atomic.Value never changes
+	b.conn.Store((*connWrapper)(nil))
+}
+
+// ensureConnection tries to establish a connection if not already connected.
+// Returns the current connection and any error.
+func (b *TCPBind) ensureConnection() (net.Conn, error) {
+	if conn := b.getConn(); conn != nil {
+		return conn, nil
+	}
+
+	b.cmu.Lock()
+	defer b.cmu.Unlock()
+
+	// Double-check if another goroutine set the connection while we were waiting for the lock
+	if conn := b.getConn(); conn != nil {
+		return conn, nil
 	}
 
 	var lastErr error
@@ -95,12 +137,31 @@ func (b *TCPBind) ensureConnection() error {
 		}
 
 		b.log.Infof("Successfully connected using %s", dialer.String())
-		b.conn = conn
-		b.reader = bufio.NewReaderSize(conn, readerBufferSize)
+		b.setConn(conn)
+		return conn, nil
+	}
+
+	return nil, fmt.Errorf("all connection strategies failed, last error: %w", lastErr)
+}
+
+// closeConnection safely closes a specific connection if it matches the current one
+func (b *TCPBind) closeConnection(conn net.Conn) error {
+	if conn == nil {
 		return nil
 	}
 
-	return fmt.Errorf("all connection strategies failed, last error: %w", lastErr)
+	b.cmu.Lock()
+	defer b.cmu.Unlock()
+
+	// Only close if it's still the current connection
+	if conn != b.getConn() {
+		return nil // Connection already changed, no need to close it
+	}
+
+	b.log.Infof("Closing connection")
+	err := conn.Close()
+	b.clearConn()
+	return err
 }
 
 func (b *TCPBind) makeReceiveIPv4() wgconn.ReceiveFunc {
@@ -108,20 +169,18 @@ func (b *TCPBind) makeReceiveIPv4() wgconn.ReceiveFunc {
 		b.rmu.Lock()
 		defer b.rmu.Unlock()
 
-		// Ensure a connection is established before reading.
-		if err := b.ensureConnection(); err != nil {
+		conn, err := b.ensureConnection()
+		if err != nil {
 			return 0, err
 		}
 
 		header := make([]byte, headerSize)
-		_, err = io.ReadFull(b.reader, header)
+		_, err = io.ReadFull(conn, header)
 		if err != nil {
-			b.conn = nil // Clear connection on failure to trigger reconnection
-			b.reader = nil
+			b.closeConnection(conn)
 			return 0, err
 		}
 
-		// Read the packet size from the header
 		pktSize := int(binary.BigEndian.Uint16(header))
 		if pktSize == 0 {
 			return 0, fmt.Errorf("invalid packet size: 0")
@@ -131,10 +190,11 @@ func (b *TCPBind) makeReceiveIPv4() wgconn.ReceiveFunc {
 			return 0, fmt.Errorf("buffer size %d is smaller than packet size %d", len(bufs[0]), pktSize)
 		}
 
-		// Read the packet payload using the buffered reader
-		_, err = io.ReadFull(b.reader, bufs[0][:pktSize])
+		// Read the packet payload
+		_, err = io.ReadFull(conn, bufs[0][:pktSize])
 		if err != nil {
 			b.log.Warn("Failed to read packet data:", err)
+			b.closeConnection(conn)
 			return 0, err
 		}
 
@@ -163,6 +223,7 @@ func (b *TCPBind) BatchSize() int {
 func (b *TCPBind) Close() error {
 	b.wmu.Lock()
 	defer b.wmu.Unlock()
+
 	select {
 	case <-b.done:
 		// Already closed
@@ -170,9 +231,12 @@ func (b *TCPBind) Close() error {
 	default:
 		close(b.done)
 	}
-	return b.conn.Close()
+
+	// closeConnection will handle its own locking
+	return b.closeConnection(b.getConn())
 }
 
+// Send writes packets to the connection.
 func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
 	if len(bufs) == 0 {
 		return nil
@@ -181,12 +245,8 @@ func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
 	b.wmu.Lock()
 	defer b.wmu.Unlock()
 
-	// Ensure a connection is established before writing.
-	if err := b.ensureConnection(); err != nil {
-		return err
-	}
-
 	// Write packets to buffer
+	header := make([]byte, headerSize)
 	for _, data := range bufs {
 		packetSize := len(data)
 		if packetSize == 0 {
@@ -196,7 +256,6 @@ func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
 			return fmt.Errorf("packet size %d exceeds maximum allowed size", packetSize)
 		}
 
-		header := make([]byte, headerSize)
 		binary.BigEndian.PutUint16(header, uint16(packetSize))
 		if _, err := b.writebuf.Write(header); err != nil {
 			return err
@@ -209,7 +268,6 @@ func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
 	// Flush buffer to connection
 	if b.writebuf.Len() > 0 {
 		if err := b.flush(); err != nil {
-			b.conn = nil // Clear connection on failure to trigger reconnection
 			return err
 		}
 	}
@@ -218,18 +276,24 @@ func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
 }
 
 // flush writes the buffered data to the connection.
-// Caller must hold the write mutex.
 func (b *TCPBind) flush() error {
+	conn, err := b.ensureConnection()
+	if err != nil {
+		return err
+	}
+
 	data := b.writebuf.Bytes()
 	total := len(data)
 	written := 0
 
 	for written < total {
-		n, err := b.conn.Write(data[written:])
+		n, err := conn.Write(data[written:])
 		if err != nil {
+			b.closeConnection(conn)
 			return err
 		}
 		if n == 0 {
+			b.closeConnection(conn)
 			return fmt.Errorf("failed to write data to connection")
 		}
 		written += n
