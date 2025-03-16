@@ -1,377 +1,374 @@
 package wireguard
 
 import (
-	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
-	wgconn "golang.zx2c4.com/wireguard/conn"
+	"golang.zx2c4.com/wireguard/conn"
 )
 
 const (
-	mtu                   = 1500
-	headerSize            = 2
-	defaultConnectTimeout = 20 * time.Second
-	defaultWriteTimeout   = 20 * time.Second
-	batchSize             = 1               // If this is greater than 1, packet reading logic needs adjustment
-	writeBufferSize       = 1024 * 1024 * 1 // 1MB write buffer
+	// Protocol constants
+	headerSize = 2 // Size of the uint16 big-endian length prefix
+	mtu        = 1500
+
+	// Connection parameters
+	defaultDialTimeout  = 20 * time.Second
+	defaultReadTimeout  = 20 * time.Second
+	defaultWriteTimeout = 20 * time.Second
+	keepAliveInterval   = 25 * time.Second
+	maxIdleTime         = 2 * time.Minute // Time after which a connection is considered stale
+
+	// Fixed batch size of 1 for TCP
+	batchSize = 1
+
+	// Pool buffer size - large enough for max MTU + header
+	bufferSize = mtu + headerSize
 )
 
-var (
-	_ wgconn.Endpoint = (*TCPEndpoint)(nil)
-	_ wgconn.Bind     = (*TCPBind)(nil)
-)
-
-// connWrapper wraps any net.Conn implementation to provide a consistent type
-// for atomic.Value to store
-type connWrapper struct {
-	conn net.Conn
+// Add a buffer pool for reusing packet buffers
+var bufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, bufferSize)
+		return &buf
+	},
 }
 
+// TCPEndpoint represents a Wireguard endpoint over TCP
+type TCPEndpoint struct {
+	dst netip.AddrPort
+}
+
+func (e *TCPEndpoint) ClearSrc()           { /* no-op for TCP */ }
+func (e *TCPEndpoint) SrcToString() string { return "" }
+func (e *TCPEndpoint) DstIP() netip.Addr   { return e.dst.Addr() }
+func (e *TCPEndpoint) DstPort() uint16     { return e.dst.Port() }
+func (e *TCPEndpoint) SrcIP() netip.Addr   { return netip.Addr{} }
+func (e *TCPEndpoint) DstToBytes() []byte {
+	b, _ := e.dst.MarshalBinary()
+	return b
+}
+func (e *TCPEndpoint) DstToString() string { return e.dst.String() }
+
+// TCPBind is a Wireguard conn.Bind implementation that works over TCP
 type TCPBind struct {
-	conn    atomic.Value // stores *connWrapper
-	src     netip.AddrPort
-	dst     netip.AddrPort
-	log     *zap.SugaredLogger
-	dialers []Dialer
+	serverAddr       string         // Address of the server to connect to
+	parsedServerAddr netip.AddrPort // Parsed address of the server
+	localPort        uint16         // Local port to use for endpoint
+	conn             net.Conn       // The current TCP connection
 
-	open bool
-	wmu  sync.Mutex
-	rmu  sync.Mutex
-	cmu  sync.Mutex
+	logger *zap.SugaredLogger
 
-	writebuf bytes.Buffer
-	done     chan struct{}
+	mu      sync.Mutex // Protects conn, closed fields
+	closed  bool       // Whether the bind is closed
+	dialers []Dialer   // Connection dialers to use
 }
 
-func NewTCPBind(src *netip.AddrPort, addr string, log *zap.SugaredLogger) (*TCPBind, error) {
+// NewTCPBind creates a new TCP bind for Wireguard
+func NewTCPBind(src *netip.AddrPort, serverAddr string, logger *zap.SugaredLogger) (*TCPBind, error) {
+	return NewTCPBindWithDialConfig(src, serverAddr, nil, logger)
+}
+
+// NewTCPBindWithDialConfig creates a new TCP bind for Wireguard with a custom dial configuration
+func NewTCPBindWithDialConfig(src *netip.AddrPort, serverAddr string, dialConfig *DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
+	if serverAddr == "" {
+		return nil, fmt.Errorf("server address cannot be empty")
+	}
+
 	if src == nil {
-		return nil, fmt.Errorf("src cannot be nil")
-	}
-	if addr == "" {
-		return nil, fmt.Errorf("addr cannot be empty")
-	}
-	if log == nil {
-		return nil, fmt.Errorf("logger cannot be nil")
+		return nil, fmt.Errorf("source address cannot be nil")
 	}
 
-	dst, err := netip.ParseAddrPort(addr)
+	// Try to parse the server address
+	serverAddrPort, err := netip.ParseAddrPort(serverAddr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid destination address: %w", err)
+		return nil, fmt.Errorf("invalid server address: %w", err)
 	}
 
-	dialConfig := NewDialConfig()
-	dialers := dialConfig.Dialers(addr, defaultConnectTimeout)
+	// Create dialers based on configuration
+	dc := dialConfig
+	if dc == nil {
+		dc = NewDialConfig()
+	}
+	dialers := dc.Dialers(serverAddr, defaultDialTimeout)
 
 	b := &TCPBind{
-		src:      *src,
-		dst:      dst,
-		log:      log,
-		dialers:  dialers,
-		done:     make(chan struct{}),
-		writebuf: *bytes.NewBuffer(make([]byte, 0, writeBufferSize)),
+		serverAddr:       serverAddr,
+		parsedServerAddr: serverAddrPort,
+		localPort:        src.Port(),
+		logger:           logger,
+		dialers:          dialers,
 	}
-
-	b.conn.Store((*connWrapper)(nil))
 
 	return b, nil
 }
 
-func (b *TCPBind) getConn() net.Conn {
-	val := b.conn.Load()
-	if val == nil {
-		return nil
+// Open implements conn.Bind.Open, called by Wireguard to create the binding
+func (b *TCPBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
+	b.logger.Infof("Opening TCPBind")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Allow WireGuard to call Open only once
+	if !b.closed {
+		return nil, 0, conn.ErrBindAlreadyOpen
 	}
 
-	wrapper, ok := val.(*connWrapper)
-	if !ok || wrapper == nil {
-		return nil
+	b.closed = false
+
+	// Use the port provided by the caller if our localPort is 0
+	if b.localPort == 0 {
+		b.localPort = port
 	}
 
-	return wrapper.conn
+	// Return the receive function - actual connection happens lazily
+	return []conn.ReceiveFunc{b.receivePackets}, b.localPort, nil
 }
 
-func (b *TCPBind) setConn(conn net.Conn) {
-	if conn == nil {
-		b.clearConn()
-		return
-	}
-	b.conn.Store(&connWrapper{conn: conn})
-}
-
-func (b *TCPBind) clearConn() {
-	b.conn.Store((*connWrapper)(nil))
-}
-
-// ensureConnection tries to establish a connection if not already connected.
-// Returns the current connection and any error.
-func (b *TCPBind) ensureConnection() (net.Conn, error) {
-	if conn := b.getConn(); conn != nil {
-		return conn, nil
-	}
-
-	b.cmu.Lock()
-	defer b.cmu.Unlock()
-
-	// Double-check if another goroutine set the connection while we were waiting for the lock
-	if conn := b.getConn(); conn != nil {
-		return conn, nil
-	}
-
-	var lastErr error
-	for _, dialer := range b.dialers {
-		b.log.Infof("Attempting connection using %s", dialer.String())
-
-		conn, err := dialer.Connect()
-		if err != nil {
-			b.log.Warnf("Connection attempt failed: %v", err)
-			lastErr = err
-			continue
-		}
-
-		b.log.Infof("Successfully connected using %s", dialer.String())
-		b.setConn(conn)
-		return conn, nil
-	}
-
-	return nil, fmt.Errorf("all connection strategies failed, last error: %w", lastErr)
-}
-
-// closeConnection safely closes a specific connection if it matches the current one
-// Returns the error from the close operation
-func (b *TCPBind) closeConnection(conn net.Conn) error {
-	if conn == nil {
-		return nil
-	}
-
-	b.cmu.Lock()
-	defer b.cmu.Unlock()
-
-	// Only close if it's still the current connection
-	if conn != b.getConn() {
-		return nil // Connection already changed, no need to close it
-	}
-
-	b.log.Infof("Closing connection")
-	err := conn.Close()
-	b.clearConn()
-	return err
-}
-
-func (b *TCPBind) makeReceiveIPv4() wgconn.ReceiveFunc {
-	return func(bufs [][]byte, sizes []int, eps []wgconn.Endpoint) (n int, err error) {
-		b.rmu.Lock()
-		defer b.rmu.Unlock()
-
-		conn, err := b.ensureConnection()
-		if err != nil {
-			return 0, err
-		}
-
-		var header uint16
-		// Read the packet header directly into the header
-		if err := binary.Read(conn, binary.BigEndian, &header); err != nil {
-			b.log.Warn("Failed to read packet header:", err)
-			b.closeConnection(conn)
-			return 0, err
-		}
-
-		if header == 0 {
-			return 0, fmt.Errorf("invalid packet size: 0")
-		}
-
-		if len(bufs[0]) < int(header) {
-			return 0, fmt.Errorf("buffer size %d is smaller than packet size %d", len(bufs[0]), header)
-		}
-
-		// Read the packet payload
-		_, err = io.ReadFull(conn, bufs[0][:header])
-		if err != nil {
-			b.closeConnection(conn)
-			b.log.Warn("Failed to read packet data:", err)
-			return 0, err
-		}
-
-		sizes[0] = int(header)
-		eps[0] = &TCPEndpoint{src: b.src, dst: b.dst}
-		return 1, nil
-	}
-}
-
-func (b *TCPBind) Open(port uint16) ([]wgconn.ReceiveFunc, uint16, error) {
-	b.wmu.Lock()
-	defer b.wmu.Unlock()
-
-	if b.open {
-		return nil, 0, wgconn.ErrBindAlreadyOpen
-	}
-	b.open = true
-
-	return []wgconn.ReceiveFunc{b.makeReceiveIPv4()}, b.src.Port(), nil
-}
-
-func (b *TCPBind) BatchSize() int {
-	return batchSize
-}
-
+// Close implements conn.Bind.Close, closing the TCP connection
 func (b *TCPBind) Close() error {
-	b.wmu.Lock()
-	defer b.wmu.Unlock()
+	b.logger.Infof("Closing TCPBind")
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	select {
-	case <-b.done:
-		// Already closed
-		return nil
-	default:
-		close(b.done)
-	}
-
-	// closeConnection will handle its own locking
-	b.log.Info("Closing connection")
-	return b.closeConnection(b.getConn())
-}
-
-// Send writes packets to the connection.
-func (b *TCPBind) Send(bufs [][]byte, ep wgconn.Endpoint) error {
-	if len(bufs) == 0 {
+	if b.closed {
 		return nil
 	}
 
-	b.wmu.Lock()
-	defer b.wmu.Unlock()
+	b.closed = true
 
-	// Write packets to buffer
-	header := make([]byte, headerSize)
-	for _, data := range bufs {
-		packetSize := len(data)
-		if packetSize == 0 {
-			continue
-		}
-		if packetSize > mtu-headerSize {
-			return fmt.Errorf("packet size %d exceeds maximum allowed size", packetSize)
-		}
-
-		binary.BigEndian.PutUint16(header, uint16(packetSize))
-		if _, err := b.writebuf.Write(header); err != nil {
-			return err
-		}
-		if _, err := b.writebuf.Write(data); err != nil {
-			return err
-		}
-	}
-
-	// Flush buffer to connection
-	if b.writebuf.Len() > 0 {
-		if err := b.flush(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// flush writes the buffered data to the connection.
-func (b *TCPBind) flush() error {
-	conn, err := b.ensureConnection()
-	if err != nil {
+	// Close the current connection if it exists.
+	if b.conn != nil {
+		err := b.conn.Close()
+		b.conn = nil
 		return err
 	}
 
-	data := b.writebuf.Bytes()
-	total := len(data)
-	written := 0
-
-	for written < total {
-		n, err := conn.Write(data[written:])
-		if err != nil {
-			b.closeConnection(conn)
-			b.log.Warn("Failed to write data to connection:", err)
-			return err
-		}
-		if n == 0 {
-			b.closeConnection(conn)
-			b.log.Warn("Failed to write data to connection: 0 bytes written")
-			return fmt.Errorf("failed to write data to connection")
-		}
-		written += n
-	}
-
-	b.writebuf.Reset()
 	return nil
 }
 
-func (b *TCPBind) SetMark(mark uint32) error {
-	return nil
-}
-
-type TCPEndpoint struct {
-	dst netip.AddrPort
-	src netip.AddrPort
-}
-
-func (b *TCPBind) ParseEndpoint(s string) (wgconn.Endpoint, error) {
-	if s == "" {
-		return nil, fmt.Errorf("empty endpoint string")
+// receivePackets is the ReceiveFunc implementation for WireGuard
+func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
+	// Check if we're closed
+	if b.isClosed() {
+		return 0, net.ErrClosed
 	}
 
+	// Make sure we have a connection
+	conn, err := b.ensureConnection()
+	if err != nil {
+		return 0, fmt.Errorf("failed to establish connection: %w", err)
+	}
+
+	// Get a buffer from the pool for this packet
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
+
+	headerBuf := buf[:headerSize]
+
+	// Ensure we don't block indefinitely
+	if err := conn.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
+		b.logger.Warnf("Failed to set read deadline: %v", err)
+	}
+
+	// Read header (2-byte length prefix)
+	_, err = io.ReadFull(conn, headerBuf)
+	if err != nil {
+		// Ignore timeout errors - these are normal when no packets are available
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return 0, nil
+		}
+
+		b.logger.Warnf("Failed to read header: %v", err)
+		b.closeConnectionAsync(conn)
+		return 0, err
+	}
+
+	// Decode packet size
+	size := binary.BigEndian.Uint16(headerBuf)
+
+	// Validate packet size
+	if size == 0 {
+		b.logger.Warn("Received zero-size packet, ignoring")
+		return 0, nil
+	}
+
+	if size > mtu-headerSize {
+		b.logger.Warnf("Packet too large: %d > %d", size, mtu-headerSize)
+		b.closeConnectionAsync(conn)
+		return 0, fmt.Errorf("packet too large: %d > %d", size, mtu-headerSize)
+	}
+
+	// Read payload into the same buffer, starting after the header
+	payloadBuf := buf[headerSize : headerSize+size]
+
+	// Set a fresh read deadline for the payload
+	if err := conn.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
+		b.logger.Warnf("Failed to set read deadline for payload: %v", err)
+	}
+
+	_, err = io.ReadFull(conn, payloadBuf)
+	if err != nil {
+		b.logger.Warnf("Failed to read payload: %v", err)
+		b.closeConnectionAsync(conn)
+		return 0, err
+	}
+
+	// Copy the data to WireGuard's buffer
+	n := copy(bufs[0], payloadBuf)
+	sizes[0] = n
+
+	// Use server address for the endpoint
+	endpoint := &TCPEndpoint{dst: b.parsedServerAddr}
+	eps[0] = endpoint
+
+	return 1, nil
+}
+
+// Parse creates an endpoint from a string address
+func (b *TCPBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 	dst, err := netip.ParseAddrPort(s)
 	if err != nil {
 		return nil, fmt.Errorf("invalid endpoint address: %w", err)
 	}
 
-	if !dst.IsValid() {
-		return nil, fmt.Errorf("invalid endpoint: %s", s)
+	return &TCPEndpoint{dst: dst}, nil
+}
+
+// Send sends a packet via the TCP connection with a 2-byte length prefix
+func (b *TCPBind) Send(bufs [][]byte, ep conn.Endpoint) error {
+	if b.isClosed() {
+		return net.ErrClosed
 	}
 
-	return &TCPEndpoint{
-		dst: dst,
-	}, nil
-}
-
-func (e *TCPEndpoint) ClearSrc() {
-	e.src = netip.AddrPort{}
-}
-
-func (e *TCPEndpoint) SrcToString() string {
-	if !e.src.IsValid() {
-		return ""
-	}
-	return e.src.String()
-}
-
-func (e *TCPEndpoint) DstIP() netip.Addr {
-	return e.dst.Addr()
-}
-
-func (e *TCPEndpoint) DstPort() uint16 {
-	return e.dst.Port()
-}
-
-func (e *TCPEndpoint) SrcIP() netip.Addr {
-	return e.src.Addr()
-}
-
-func (e *TCPEndpoint) DstToBytes() []byte {
-	if !e.dst.IsValid() {
-		return nil
-	}
-	b, err := e.dst.MarshalBinary()
+	conn, err := b.ensureConnection()
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to establish connection: %w", err)
 	}
-	return b
+
+	// Write each packet with a length prefix
+	header := make([]byte, headerSize)
+	for _, buf := range bufs {
+		if len(buf) == 0 {
+			continue
+		}
+
+		// Ensure packet isn't too large
+		if len(buf) > mtu-headerSize {
+			return fmt.Errorf("packet too large: %d > %d", len(buf), mtu-headerSize)
+		}
+
+		// Put the packet length in the header
+		binary.BigEndian.PutUint16(header, uint16(len(buf)))
+		// Ensure we don't block indefinitely
+		if err := conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout)); err != nil {
+			b.logger.Warnf("Failed to set write deadline: %v", err)
+		}
+
+		// Use net.Buffers to write both slices in a single syscall without copying
+		netBuffers := net.Buffers{header, buf}
+		_, err := (&netBuffers).WriteTo(conn)
+		if err != nil {
+			b.logger.Warnf("Failed to write packet: %v", err)
+			b.closeConnectionAsync(conn)
+			return fmt.Errorf("failed to write packet: %w", err)
+		}
+	}
+
+	return nil
 }
 
-func (e *TCPEndpoint) DstToString() string {
-	if !e.dst.IsValid() {
-		return ""
+// BatchSize implements conn.Bind.BatchSize
+func (b *TCPBind) BatchSize() int {
+	return batchSize // Always 1 for TCP
+}
+
+// SetMark is a no-op for TCP
+func (b *TCPBind) SetMark(mark uint32) error {
+	return nil
+}
+
+// ensureConnection makes sure we have a working TCP connection.
+func (b *TCPBind) ensureConnection() (net.Conn, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// If we already have a connection, reuse it
+	if b.conn != nil {
+		return b.conn, nil
 	}
-	return e.dst.String()
+
+	// Check if we're closed
+	if b.closed {
+		return nil, net.ErrClosed
+	}
+
+	// Try each dialer
+	var conn net.Conn
+	var err error
+	// Try each dialer while still holding the lock to prevent concurrent connection attempts
+	for _, dialer := range b.dialers {
+		b.logger.Infof("Trying to connect via %s...", dialer.String())
+		// Attempt to connect
+		conn, err = dialer.Connect()
+		if err == nil {
+			b.logger.Infof("Connection successful via %s", dialer.String())
+			break
+		}
+		b.logger.Warnf("Connection attempt via %s failed: %v", dialer.String(), err)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s after %d attempts: %w",
+			b.serverAddr, len(b.dialers), err)
+	}
+
+	// Enable keepalives and disable Nagle's algorithm
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(keepAliveInterval)
+		tcpConn.SetNoDelay(true)
+	}
+
+	// Set the new connection
+	b.conn = conn
+
+	return conn, nil
+}
+
+// isClosed checks if the bind is closed without blocking
+func (b *TCPBind) isClosed() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed
+}
+
+// closeConnectionAsync closes a connection asynchronously
+func (b *TCPBind) closeConnectionAsync(conn net.Conn) {
+	if conn == nil {
+		return
+	}
+
+	b.mu.Lock()
+	// Only clear if it's still the current connection
+	if b.conn == conn {
+		b.conn = nil
+	}
+	b.mu.Unlock()
+
+	// Close the connection without holding the lock
+	go func() {
+		if err := conn.Close(); err != nil {
+			b.logger.Warnf("Error closing connection asynchronously: %v", err)
+		}
+	}()
 }

@@ -331,7 +331,13 @@ func (a *Agent) ConnectWait(maxTries int) error {
 	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))
 	if forceTCP {
 		a.log.Info("TCP connection forced. Connecting...")
-		return connect(a.UpTCP, "TCP")
+		err := connect(a.UpTCP, "TCP")
+		if err != nil {
+			a.log.Info("TCP connection failed. Cleaning up...")
+			a.Close()
+			return err
+		}
+		return nil
 	}
 
 	a.log.Info("Connecting via UDP...")
@@ -343,7 +349,13 @@ func (a *Agent) ConnectWait(maxTries int) error {
 	a.Close()
 
 	a.log.Info("Trying TCP...")
-	return connect(a.UpTCP, "TCP")
+	err := connect(a.UpTCP, "TCP")
+	if err != nil {
+		a.log.Info("TCP connection failed. Cleaning up...")
+		a.Close()
+		return err
+	}
+	return nil
 }
 
 func (a *Agent) checkConnection(protocol, endpoint string) error {
@@ -360,10 +372,12 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 		case <-checkTicker.C:
 			wgStats, err := wireguard.DeviceStats(a.tunDev)
 			if err != nil {
-				return fmt.Errorf("failed getting tunnel stats: %w", err)
+				a.log.Warnf("Failed getting tunnel stats: %v", err)
+				continue // Don't fail immediately on stats error
 			}
 
 			if wgStats.LastHandshakeTimeSec > 0 {
+				a.log.Infof("WireGuard handshake successful over %s", protocol)
 				a.State.SetStatus(StatusConnected)
 				if protocol == "TCP" {
 					a.State.ConnectionType = ConnectionTCP
@@ -375,11 +389,11 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 
 		case <-logTicker.C:
 			elapsed := int(time.Since(startTime).Seconds())
-			a.log.Infof("Waiting for connection... %d/30 seconds", elapsed)
+			a.log.Infof("Waiting for WireGuard handshake... %d/30 seconds", elapsed)
 		}
 	}
 
-	return fmt.Errorf("connection timed out")
+	return fmt.Errorf("connection timed out waiting for WireGuard handshake")
 }
 
 // UpdateState periodically updates the agent state.

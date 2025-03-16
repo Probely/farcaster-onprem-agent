@@ -311,6 +311,72 @@ func NewDialConfig() *DialConfig {
 	}
 }
 
+// WithTLS enables or disables TLS connections
+func (dc *DialConfig) WithTLS(enable bool) *DialConfig {
+	dc.enableTLS = enable
+	return dc
+}
+
+// WithWebSocket enables or disables WebSocket connections
+func (dc *DialConfig) WithWebSocket(enable bool) *DialConfig {
+	dc.enableWS = enable
+	return dc
+}
+
+// WithSecureWebSocket enables or disables secure WebSocket connections
+func (dc *DialConfig) WithSecureWebSocket(enable bool) *DialConfig {
+	dc.enableWSS = enable
+	return dc
+}
+
+// WithHTTPProxy sets the HTTP proxy to use
+func (dc *DialConfig) WithHTTPProxy(proxyURL *url.URL) *DialConfig {
+	dc.httpProxy = proxyURL
+	return dc
+}
+
+// WithSOCKSProxy sets the SOCKS proxy to use
+func (dc *DialConfig) WithSOCKSProxy(proxyURL *url.URL) *DialConfig {
+	dc.socksProxy = proxyURL
+	return dc
+}
+
+// WithHTTPProxyString sets the HTTP proxy from a string URL
+func (dc *DialConfig) WithHTTPProxyString(proxyURLStr string) *DialConfig {
+	if proxyURLStr == "" {
+		dc.httpProxy = nil
+		return dc
+	}
+
+	if !strings.HasPrefix(proxyURLStr, "http://") && !strings.HasPrefix(proxyURLStr, "https://") {
+		proxyURLStr = "http://" + proxyURLStr
+	}
+
+	proxyURL, err := url.Parse(proxyURLStr)
+	if err == nil {
+		dc.httpProxy = proxyURL
+	}
+	return dc
+}
+
+// WithSOCKSProxyString sets the SOCKS proxy from a string URL
+func (dc *DialConfig) WithSOCKSProxyString(proxyURLStr string) *DialConfig {
+	if proxyURLStr == "" {
+		dc.socksProxy = nil
+		return dc
+	}
+
+	if !strings.HasPrefix(proxyURLStr, "socks5://") {
+		proxyURLStr = "socks5://" + proxyURLStr
+	}
+
+	proxyURL, err := url.Parse(proxyURLStr)
+	if err == nil {
+		dc.socksProxy = proxyURL
+	}
+	return dc
+}
+
 // CreateStrategies returns a list of connection strategies for the given address
 func (dc *DialConfig) Dialers(addr string, timeout time.Duration) []Dialer {
 	var dialers []Dialer
