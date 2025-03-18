@@ -32,7 +32,7 @@ DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 . "${FARCASTER_PATH}"/bin/_lib.sh
 
 # Make sure we can run iptables
-export IPT_CMD=$(check_iptables)
+export IPT_CMD=$(check_iptables || echo "")
 if [ -z "${IPT_CMD}" ]; then
 	echo "Could not run iptables. Make sure this container has the NET_ADMIN capability."
 	exit 1
