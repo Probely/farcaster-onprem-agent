@@ -1,4 +1,4 @@
-package wireguard
+package dialers
 
 import (
 	"crypto/tls"

@@ -13,6 +13,8 @@ import (
 
 	"go.uber.org/zap"
 	"golang.zx2c4.com/wireguard/conn"
+
+	"probely.com/farcaster/dialers"
 )
 
 const (
@@ -67,9 +69,9 @@ type TCPBind struct {
 
 	logger *zap.SugaredLogger
 
-	mu      sync.Mutex // Protects conn, closed fields
-	closed  bool       // Whether the bind is closed
-	dialers []Dialer   // Connection dialers to use
+	mu      sync.Mutex       // Protects conn, closed fields
+	closed  bool             // Whether the bind is closed
+	dialers []dialers.Dialer // Connection dialers to use
 }
 
 // NewTCPBind creates a new TCP bind for Wireguard
@@ -78,7 +80,7 @@ func NewTCPBind(src *netip.AddrPort, origEndpoint, endpoint string, logger *zap.
 }
 
 // NewTCPBindWithDialConfig creates a new TCP bind for Wireguard with a custom dial configuration
-func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string, dialConfig *DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
+func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string, dialConfig *dialers.DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("server address cannot be empty")
 	}
@@ -96,7 +98,7 @@ func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string
 	// Create dialers based on configuration
 	dc := dialConfig
 	if dc == nil {
-		dc = NewDialConfig()
+		dc = dialers.NewDialConfig()
 	}
 	dialers := dc.Dialers(origEndpoint, defaultDialTimeout)
 

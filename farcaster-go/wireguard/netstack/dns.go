@@ -221,10 +221,17 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Query resolvers, waiting resolverDelay between each attempt.
-	// The context may be cancelled by the caller before queries complete.
-	// This can either mean we found a successful response, or a timeout occurred.
 	var wg sync.WaitGroup
+
+	// We'll store the last non-success response here in case we need to
+	// return it if no resolver returns RcodeSuccess.
+	var lastResp *dns.Msg
+
+	// We'll collect any errors that occur from resolvers.
+	var errs []error
+	var mu sync.Mutex // Protects errs from concurrent appends
+
+outerLoop:
 	for i, resolver := range r.resolvers {
 		wg.Add(1)
 		go func(resolver string) {
@@ -243,15 +250,21 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 			}
 
 			if resp.Rcode != dns.RcodeSuccess {
+				// Store this as a "last non-success response," in case no one else succeeds
 				r.log.Warnf("Resolver %s returned non-success Rcode: %d", resolver, resp.Rcode)
 				select {
-				case resultCh <- resolverResult{err: fmt.Errorf("resolver %s returned Rcode %d", resolver, resp.Rcode), resolver: resolver}:
+				case resultCh <- resolverResult{
+					resp:     resp,
+					err:      fmt.Errorf("resolver %s returned Rcode %d", resolver, resp.Rcode),
+					resolver: resolver,
+				}:
 				case <-ctx.Done():
 					r.log.Debugf("Context canceled before sending Rcode for resolver %s", resolver)
 				}
 				return
 			}
 
+			// If we get a successful Rcode, send it and cancel other resolvers.
 			select {
 			case resultCh <- resolverResult{resp: resp, resolver: resolver}:
 				r.log.Debugf("Resolver %s succeeded, canceling other resolvers", resolver)
@@ -261,11 +274,12 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 			}
 		}(resolver)
 
-		// Wait "delay" ms between resolver attempts, except after the last resolver.
+		// Wait "delay" ms between starting each resolver, except after the last one.
 		if i < len(r.resolvers)-1 {
 			select {
 			case <-ctx.Done():
-				break
+				// Break from the outer for-loop immediately if context is canceled
+				break outerLoop
 			case <-time.After(resolverDelay):
 			}
 		}
@@ -277,33 +291,47 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 		close(resultCh)
 	}()
 
-	var (
-		lastResp *dns.Msg
-		errs     []error
-	)
-
+	// Collect results until we succeed or until everything finishes/cancels
 	for {
 		select {
 		case result, ok := <-resultCh:
 			if !ok {
+				// resultCh is closed, no more results
 				resultCh = nil
 				continue
 			}
+
+			// If we got a successful response, return immediately.
 			if result.resp != nil && result.resp.Rcode == dns.RcodeSuccess {
 				r.log.Debugf("Received successful response from resolver %s", result.resolver)
 				return result.resp, nil
 			}
+
+			// Otherwise, capture the error and possibly store the non-success resp.
 			if result.err != nil {
 				r.log.Warnf("Received error from resolver %s: %v", result.resolver, result.err)
+				mu.Lock()
 				errs = append(errs, result.err)
+				mu.Unlock()
+				if result.resp != nil {
+					// Keep track of last non-successful response (e.g., NXDOMAIN).
+					// This can be returned if no success eventually arrives.
+					lastResp = result.resp
+				}
 			}
 
 		case <-ctx.Done():
 			r.log.Warn("Context canceled or deadline exceeded")
+
+			// If we got a non-success response before everything died, return that
 			if lastResp != nil {
 				r.log.Debug("Returning last received response despite non-success Rcode")
 				return lastResp, nil
 			}
+
+			// Otherwise, all resolvers must have failed or we never got a response
+			mu.Lock()
+			defer mu.Unlock()
 			if len(errs) > 0 {
 				r.log.Error("All resolvers failed")
 				return nil, fmt.Errorf("all resolvers failed: %v", errs)
@@ -312,19 +340,22 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 			return nil, ctx.Err()
 		}
 
-		// Exit loop when both channels are closed
+		// Once resultCh is nil, we've read all results
 		if resultCh == nil {
 			break
 		}
 	}
 
+	// Finished reading all results, but no success found
 	if lastResp != nil {
-		r.log.Debug("Returning last received response")
+		r.log.Debug("Returning last received response (non-success) after all resolvers completed")
 		return lastResp, nil
 	}
 
+	mu.Lock()
+	defer mu.Unlock()
 	if len(errs) > 0 {
-		r.log.Error("All resolvers failed with errors")
+		r.log.Error("All resolvers failed with errors, no success response")
 		return nil, fmt.Errorf("all resolvers failed: %v", errs)
 	}
 
@@ -332,6 +363,7 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 	return nil, fmt.Errorf("no response from resolvers")
 }
 
+// lookupSOA queries the configured resolvers for the SOA record of the given host.
 func (r *resolver) lookupSOA(ctx context.Context, host string) (dns.RR, error) {
 	query := new(dns.Msg)
 	query.SetQuestion(dns.Fqdn(host), dns.TypeSOA)
