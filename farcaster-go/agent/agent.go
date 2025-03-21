@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
 	"strconv"
@@ -119,11 +118,10 @@ func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 // Try to read the token from a file. This can be useful to avoid showing
 // the token in the process list. If the token is not a file, it is used
 // as-is.
-func (a *Agent) loadConfig() error {
+func (a *Agent) loadConfig(mustResolve bool) error {
 	if a.cfg != nil {
 		return nil
 	}
-
 	t, err := os.ReadFile(a.token)
 	if err == nil {
 		a.log.Infof("Using token from file: %s", a.token)
@@ -133,36 +131,41 @@ func (a *Agent) loadConfig() error {
 
 	// Fetch the encrypted agent configuration using Probely's API.
 	a.cfg = config.NewFarcasterConfig(string(t), a.apiURLs, a.log)
-	if err := a.cfg.Load(); err != nil {
+	if err := a.cfg.Load(mustResolve); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (a *Agent) CheckToken() error {
-	// Load the configuration.
-	return a.loadConfig()
+	// We do not need DNS to check for token validity.
+	return a.loadConfig(false)
 }
 
 func (a *Agent) UpTCP() error {
-	if err := a.loadConfig(); err != nil {
+	if err := a.loadConfig(false); err != nil {
 		return err
 	}
 
-	cfg := a.cfg.Files["wg-tunnel.conf"]
-	addr := strings.Split(cfg.Address, "/")[0]
-	port := cfg.ListenPort
+	tunCfg := a.cfg.Files["wg-tunnel.conf"]
+	if tunCfg == nil {
+		return fmt.Errorf("tunnel configuration not found")
+	}
+	tunAddr := strings.Split(tunCfg.Address, "/")[0]
+	tunPort := tunCfg.ListenPort
 
-	srcAddr, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", addr, port))
+	srcAddr, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", tunAddr, tunPort))
 	if err != nil {
 		return fmt.Errorf("invalid tunnel address: %w", err)
 	}
 
-	host, _, err := net.SplitHostPort(cfg.Peers[0].Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint: %w", err)
+	if len(tunCfg.Peers) == 0 {
+		return fmt.Errorf("no peers found in tunnel configuration")
 	}
-	bind, err := wireguard.NewTCPBind(&srcAddr, net.JoinHostPort(host, "443"), a.log)
+
+	peer := tunCfg.Peers[0]
+
+	bind, err := wireguard.NewTCPBind(&srcAddr, peer.OrigEndpoint, peer.Endpoint, a.log)
 	if err != nil {
 		return fmt.Errorf("failed to create TCP bind: %w", err)
 	}
@@ -180,7 +183,7 @@ func (a *Agent) up(bind conn.Bind) error {
 		return fmt.Errorf("tunnels already configured: %v, %v", a.tunDev, a.gwDev)
 	}
 
-	if err := a.loadConfig(); err != nil {
+	if err := a.loadConfig(true); err != nil {
 		return err
 	}
 
@@ -314,6 +317,8 @@ func (a *Agent) Close() {
 		a.tunDev.Close()
 		a.tunDev = nil
 	}
+
+	a.cfg = nil
 }
 
 func (a *Agent) ConnectWait(maxTries int) error {
@@ -325,7 +330,7 @@ func (a *Agent) ConnectWait(maxTries int) error {
 			return fmt.Errorf("tunnel not configured")
 		}
 		hub := a.cfg.Files["wg-tunnel.conf"].Peers[0]
-		return a.checkConnection(protocol, hub.Endpoint)
+		return a.checkConnection(protocol, hub.OrigEndpoint)
 	}
 
 	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))
@@ -333,7 +338,7 @@ func (a *Agent) ConnectWait(maxTries int) error {
 		a.log.Info("TCP connection forced. Connecting...")
 		err := connect(a.UpTCP, "TCP")
 		if err != nil {
-			a.log.Info("TCP connection failed. Cleaning up...")
+			a.log.Infof("TCP connection failed: %v", err)
 			a.Close()
 			return err
 		}
@@ -341,17 +346,17 @@ func (a *Agent) ConnectWait(maxTries int) error {
 	}
 
 	a.log.Info("Connecting via UDP...")
-	if err := connect(a.Up, "UDP"); err == nil {
+	var err error
+	if err = connect(a.Up, "UDP"); err == nil {
 		return nil
 	}
-
-	a.log.Info("UDP connection failed. Cleaning up...")
+	a.log.Warnf("UDP connection failed: %v", err)
 	a.Close()
 
 	a.log.Info("Trying TCP...")
-	err := connect(a.UpTCP, "TCP")
+	err = connect(a.UpTCP, "TCP")
 	if err != nil {
-		a.log.Info("TCP connection failed. Cleaning up...")
+		a.log.Warnf("TCP connection failed: %v", err)
 		a.Close()
 		return err
 	}

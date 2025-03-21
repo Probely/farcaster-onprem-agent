@@ -60,10 +60,10 @@ func (e *TCPEndpoint) DstToString() string { return e.dst.String() }
 
 // TCPBind is a Wireguard conn.Bind implementation that works over TCP
 type TCPBind struct {
-	serverAddr       string         // Address of the server to connect to
-	parsedServerAddr netip.AddrPort // Parsed address of the server
-	localPort        uint16         // Local port to use for endpoint
-	conn             net.Conn       // The current TCP connection
+	addrPort  netip.AddrPort
+	endpoint  string
+	localPort uint16   // Local port to use for endpoint
+	conn      net.Conn // The current TCP connection
 
 	logger *zap.SugaredLogger
 
@@ -73,24 +73,24 @@ type TCPBind struct {
 }
 
 // NewTCPBind creates a new TCP bind for Wireguard
-func NewTCPBind(src *netip.AddrPort, serverAddr string, logger *zap.SugaredLogger) (*TCPBind, error) {
-	return NewTCPBindWithDialConfig(src, serverAddr, nil, logger)
+func NewTCPBind(src *netip.AddrPort, origEndpoint, endpoint string, logger *zap.SugaredLogger) (*TCPBind, error) {
+	return NewTCPBindWithDialConfig(src, origEndpoint, endpoint, nil, logger)
 }
 
 // NewTCPBindWithDialConfig creates a new TCP bind for Wireguard with a custom dial configuration
-func NewTCPBindWithDialConfig(src *netip.AddrPort, serverAddr string, dialConfig *DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
-	if serverAddr == "" {
+func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string, dialConfig *DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
+	if endpoint == "" {
 		return nil, fmt.Errorf("server address cannot be empty")
 	}
-
 	if src == nil {
 		return nil, fmt.Errorf("source address cannot be nil")
 	}
 
 	// Try to parse the server address
-	serverAddrPort, err := netip.ParseAddrPort(serverAddr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid server address: %w", err)
+	var addrPort netip.AddrPort
+	var err error
+	if addrPort, err = netip.ParseAddrPort(endpoint); err != nil {
+		return nil, fmt.Errorf("could not parse endpoint address: %w", err)
 	}
 
 	// Create dialers based on configuration
@@ -98,14 +98,14 @@ func NewTCPBindWithDialConfig(src *netip.AddrPort, serverAddr string, dialConfig
 	if dc == nil {
 		dc = NewDialConfig()
 	}
-	dialers := dc.Dialers(serverAddr, defaultDialTimeout)
+	dialers := dc.Dialers(origEndpoint, defaultDialTimeout)
 
 	b := &TCPBind{
-		serverAddr:       serverAddr,
-		parsedServerAddr: serverAddrPort,
-		localPort:        src.Port(),
-		logger:           logger,
-		dialers:          dialers,
+		endpoint:  origEndpoint,
+		addrPort:  addrPort,
+		localPort: src.Port(),
+		logger:    logger,
+		dialers:   dialers,
 	}
 
 	return b, nil
@@ -157,7 +157,6 @@ func (b *TCPBind) Close() error {
 
 // receivePackets is the ReceiveFunc implementation for WireGuard
 func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
-	// Check if we're closed
 	if b.isClosed() {
 		return 0, net.ErrClosed
 	}
@@ -228,7 +227,7 @@ func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint
 	sizes[0] = n
 
 	// Use server address for the endpoint
-	endpoint := &TCPEndpoint{dst: b.parsedServerAddr}
+	endpoint := &TCPEndpoint{dst: b.addrPort}
 	eps[0] = endpoint
 
 	return 1, nil
@@ -329,7 +328,7 @@ func (b *TCPBind) ensureConnection() (net.Conn, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s after %d attempts: %w",
-			b.serverAddr, len(b.dialers), err)
+			b.endpoint, len(b.dialers), err)
 	}
 
 	// Enable keepalives and disable Nagle's algorithm

@@ -18,14 +18,23 @@ init_environment() {
 }
 
 setup_proxy_environment() {
-    export HTTP_PROXY="${HTTP_PROXY:-}"
-    export HTTPS_PROXY="${HTTPS_PROXY:-}"
-    # Ensure both HTTP and HTTPS proxies are set if one is provided
-    if [ -n "${HTTP_PROXY}" ] && [ -z "${HTTPS_PROXY}" ]; then
+    # Sync uppercase/lowercase for each of HTTP_PROXY, HTTPS_PROXY, NO_PROXY
+    for var in HTTP_PROXY HTTPS_PROXY NO_PROXY; do
+        lower="$(echo "${var}" | tr 'A-Z' 'a-z')"
+        if [ -z "${!var:-}" ] && [ -n "${!lower:-}" ]; then
+            export "${var}"="${!lower}"
+        elif [ -n "${!var:-}" ] && [ -z "${!lower:-}" ]; then
+            export "${lower}"="${!var}"
+        fi
+    done
+
+    # Ensure both HTTP and HTTPS are set if at least one is set
+    if [ -n "${HTTP_PROXY:-}" ] && [ -z "${HTTPS_PROXY:-}" ]; then
         export HTTPS_PROXY="${HTTP_PROXY}"
-    fi
-    if [ -n "${HTTPS_PROXY}" ] && [ -z "${HTTP_PROXY}" ]; then
+        export https_proxy="${HTTP_PROXY}"
+    elif [ -n "${HTTPS_PROXY:-}" ] && [ -z "${HTTP_PROXY:-}" ]; then
         export HTTP_PROXY="${HTTPS_PROXY}"
+        export http_proxy="${HTTPS_PROXY}"
     fi
 }
 
