@@ -231,7 +231,7 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 	var errs []error
 	var mu sync.Mutex // Protects errs from concurrent appends
 
-outerLoop:
+resolverLoop:
 	for i, resolver := range r.resolvers {
 		wg.Add(1)
 		go func(resolver string) {
@@ -278,8 +278,7 @@ outerLoop:
 		if i < len(r.resolvers)-1 {
 			select {
 			case <-ctx.Done():
-				// Break from the outer for-loop immediately if context is canceled
-				break outerLoop
+				break resolverLoop
 			case <-time.After(resolverDelay):
 			}
 		}
