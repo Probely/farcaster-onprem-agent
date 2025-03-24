@@ -240,7 +240,13 @@ resolverLoop:
 			r.log.Debugf("Attempting to resolve query using resolver %s", resolver)
 			resp, _, err := client.ExchangeContext(ctx, query, resolver)
 			if err != nil {
-				r.log.Errorf("Resolver %s encountered an error: %v", resolver, err)
+				// As soon as one resolver succeeds, the context is cancelled as there is no
+				// need to wait for the others. This is expected behavior.
+				if ctx.Err() != nil {
+					r.log.Debugf("Resolver %s operation cancelled: %v", resolver, err)
+				} else {
+					r.log.Errorf("Resolver %s encountered an error: %v", resolver, err)
+				}
 				select {
 				case resultCh <- resolverResult{err: fmt.Errorf("resolver %s: %w", resolver, err), resolver: resolver}:
 				case <-ctx.Done():
@@ -250,16 +256,21 @@ resolverLoop:
 			}
 
 			if resp.Rcode != dns.RcodeSuccess {
-				// Store this as a "last non-success response," in case no one else succeeds
-				r.log.Warnf("Resolver %s returned non-success Rcode: %d", resolver, resp.Rcode)
+				if resp.Rcode == dns.RcodeNameError || resp.Rcode == dns.RcodeRefused {
+					r.log.Debugf("Resolver %s returned %d", resolver, resp.Rcode)
+				} else {
+					r.log.Warnf("Resolver %s returned non-success Rcode: %d", resolver, resp.Rcode)
+				}
+
+				// Even though it's not a "success", it's still a valid response
 				select {
 				case resultCh <- resolverResult{
 					resp:     resp,
-					err:      fmt.Errorf("resolver %s returned Rcode %d", resolver, resp.Rcode),
+					err:      nil, // Don't treat as an error
 					resolver: resolver,
 				}:
 				case <-ctx.Done():
-					r.log.Debugf("Context canceled before sending Rcode for resolver %s", resolver)
+					r.log.Debugf("Context canceled before sending response for resolver %s", resolver)
 				}
 				return
 			}
