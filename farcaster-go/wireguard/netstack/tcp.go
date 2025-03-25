@@ -97,7 +97,7 @@ func (r *netstackTCPFwd) ConnectUpstream(timeout time.Duration, count int) (*net
 	server, err := dialer.DialContext(*r.ctx, "tcp", serverAddrPort.String())
 	if err != nil {
 		r.fr.Complete(true) // Send RST.
-		return nil, fmt.Errorf("error dialing %s: %s", serverAddrPort, err)
+		return nil, err
 	}
 
 	// Set TCP keepalive options.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -411,11 +412,14 @@ func parseIPv4(addr tcpip.Address) netip.Addr {
 
 func isCommonNetworkError(err error) bool {
 	var netErr net.Error
-	return err == nil ||
-		errors.Is(err, io.EOF) ||
+	if err == nil {
+		return true
+	}
+	return errors.Is(err, io.EOF) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) ||
-		(errors.As(err, &netErr) && netErr.Timeout())
+		(errors.As(err, &netErr) && netErr.Timeout()) ||
+		strings.Contains(err.Error(), "connection reset by peer")
 }
 
 func (ns *netstack) logConnectionError(err error, msg string) {

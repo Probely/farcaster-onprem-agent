@@ -250,7 +250,7 @@ resolverLoop:
 				select {
 				case resultCh <- resolverResult{err: fmt.Errorf("resolver %s: %w", resolver, err), resolver: resolver}:
 				case <-ctx.Done():
-					r.log.Debugf("Context canceled before sending error for resolver %s", resolver)
+					r.log.Debugf("Context cancelled before sending error for resolver %s", resolver)
 				}
 				return
 			}
@@ -270,7 +270,7 @@ resolverLoop:
 					resolver: resolver,
 				}:
 				case <-ctx.Done():
-					r.log.Debugf("Context canceled before sending response for resolver %s", resolver)
+					r.log.Debugf("Context cancelled before sending response for resolver %s", resolver)
 				}
 				return
 			}
@@ -281,7 +281,7 @@ resolverLoop:
 				r.log.Debugf("Resolver %s succeeded, canceling other resolvers", resolver)
 				cancel()
 			case <-ctx.Done():
-				r.log.Debugf("Context canceled before sending response for resolver %s", resolver)
+				r.log.Debugf("Context cancelled before sending response for resolver %s", resolver)
 			}
 		}(resolver)
 
@@ -331,7 +331,7 @@ resolverLoop:
 			}
 
 		case <-ctx.Done():
-			r.log.Warn("Context canceled or deadline exceeded")
+			r.log.Debug("Context cancelled or deadline exceeded")
 
 			// If we got a non-success response before everything died, return that
 			if lastResp != nil {
@@ -343,10 +343,10 @@ resolverLoop:
 			mu.Lock()
 			defer mu.Unlock()
 			if len(errs) > 0 {
-				r.log.Error("All resolvers failed")
+				r.log.Warnf("All resolvers failed trying to resolve %s", query.Question[0].Name)
 				return nil, fmt.Errorf("all resolvers failed: %v", errs)
 			}
-			r.log.Error("No response received from resolvers")
+			r.log.Debug("No response received from resolvers")
 			return nil, ctx.Err()
 		}
 
