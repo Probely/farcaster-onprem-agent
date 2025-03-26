@@ -2,10 +2,11 @@ package agent
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -80,9 +81,10 @@ func (s *state) Status() status {
 type Agent struct {
 	// Agent state.
 	State *state
-
 	// API token.
 	token string
+	// API URLs.
+	apiURLs []string
 	// Configuration.
 	cfg *config.FarcasterConfig
 	// Tunnel.
@@ -91,31 +93,35 @@ type Agent struct {
 	// Gateway.
 	gw    tun.Device
 	gwDev *device.Device
-
 	// Connection count (including previous connections).
-	conns atomic.Uint32
-
+	conns  atomic.Uint32
 	cancel chan struct{}
 	log    *zap.SugaredLogger
+	// WaitGroup to track background goroutines
+	wg sync.WaitGroup
 }
 
 // New creates a new agent.
-func New(token string, logger *zap.SugaredLogger) *Agent {
+func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
 	return &Agent{
-		State:  newState(),
-		token:  token,
-		cancel: make(chan struct{}),
-		log:    logger,
+		State:   newState(),
+		token:   token,
+		apiURLs: apiURLs,
+		cancel:  make(chan struct{}),
+		log:     logger,
 	}
 }
 
-func (a *Agent) loadConfig() (*config.FarcasterConfig, error) {
-	// Try to read the token from a file. This can be useful to avoid showing
-	// the token in the process list. If the token is not a file, it is used
-	// as-is.
+// Try to read the token from a file. This can be useful to avoid showing
+// the token in the process list. If the token is not a file, it is used
+// as-is.
+func (a *Agent) loadConfig(mustResolve bool) error {
+	if a.cfg != nil {
+		return nil
+	}
 	t, err := os.ReadFile(a.token)
 	if err == nil {
 		a.log.Infof("Using token from file: %s", a.token)
@@ -124,37 +130,45 @@ func (a *Agent) loadConfig() (*config.FarcasterConfig, error) {
 	}
 
 	// Fetch the encrypted agent configuration using Probely's API.
-	cfg := config.NewFarcasterConfig(string(t), a.log)
-	if err := cfg.Load(); err != nil {
-		return nil, err
+	a.cfg = config.NewFarcasterConfig(string(t), a.apiURLs, a.log)
+	if err := a.cfg.Load(mustResolve); err != nil {
+		return err
 	}
-
-	return cfg, nil
+	return nil
 }
 
 func (a *Agent) CheckToken() error {
-	// Load the configuration.
-	_, err := a.loadConfig()
-	return err
+	// We do not need DNS to check for token validity.
+	return a.loadConfig(false)
 }
 
 func (a *Agent) UpTCP() error {
-	cfg := a.cfg.Files["wg-tunnel.conf"]
-	addr := strings.Split(cfg.Address, "/")[0]
-	port := cfg.ListenPort
+	if err := a.loadConfig(false); err != nil {
+		return err
+	}
 
-	srcAddr, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", addr, port))
+	tunCfg := a.cfg.Files["wg-tunnel.conf"]
+	if tunCfg == nil {
+		return fmt.Errorf("tunnel configuration not found")
+	}
+	tunAddr := strings.Split(tunCfg.Address, "/")[0]
+	tunPort := tunCfg.ListenPort
+
+	srcAddr, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", tunAddr, tunPort))
 	if err != nil {
 		return fmt.Errorf("invalid tunnel address: %w", err)
 	}
 
-	// Create a TCP bind.
-	host, _, err := net.SplitHostPort(cfg.Peers[0].Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint: %w", err)
+	if len(tunCfg.Peers) == 0 {
+		return fmt.Errorf("no peers found in tunnel configuration")
 	}
-	conn := wireguard.NewRobustTCPConn(net.JoinHostPort(host, "443"))
-	bind := wireguard.NewTCPBind(&srcAddr, conn, a.log)
+
+	peer := tunCfg.Peers[0]
+
+	bind, err := wireguard.NewTCPBind(&srcAddr, peer.OrigEndpoint, peer.Endpoint, a.log)
+	if err != nil {
+		return fmt.Errorf("failed to create TCP bind: %w", err)
+	}
 
 	return a.up(bind)
 }
@@ -164,15 +178,12 @@ func (a *Agent) Up() error {
 }
 
 func (a *Agent) up(bind conn.Bind) error {
-	// If the agent was already configured, just bring the tunnel up.
-	if a.tunDev != nil {
-		return a.tunDev.Up()
+	// Ensure that tunnels are not yet configured.
+	if a.tunDev != nil || a.gwDev != nil {
+		return fmt.Errorf("tunnels already configured: %v, %v", a.tunDev, a.gwDev)
 	}
 
-	var err error
-	// Load the configuration.
-	a.cfg, err = a.loadConfig()
-	if err != nil {
+	if err := a.loadConfig(true); err != nil {
 		return err
 	}
 
@@ -197,7 +208,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	a.tun = wireguard.NewChannelTUN("tunnel", tunCfg.MTU)
 	a.tunDev = device.NewDevice(a.tun, bind, device.NewLogger(wgl, "tunnel: "))
 
-	err = a.tunDev.IpcSet(tunCfg.UAPIConfig())
+	err := a.tunDev.IpcSet(tunCfg.UAPIConfig())
 	if err != nil {
 		return fmt.Errorf("tunnel not configured: %w", err)
 	}
@@ -220,11 +231,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	// Create a netstack-based TUN device. We use its userspace TCP/IP stack to
 	// route traffic from remote peers to the local network without requiring
 	// special privileges or devices (e.g. /dev/net/tun).
-	mtu := gwCfg.MTU
-	// Clamp MTU to 1340 to avoid issues with broken path MTU discovery.
-	if mtu > 1340 {
-		mtu = 1340
-	}
+	mtu := min(gwCfg.MTU, 1340)
 	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log)
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
@@ -257,8 +264,9 @@ func (a *Agent) up(bind conn.Bind) error {
 
 	// Increment the connection count.
 	a.conns.Add(1)
+	connID := a.conns.Load()
 
-	go a.updateState(a.conns.Load())
+	go a.updateState(connID)
 
 	return nil
 }
@@ -272,116 +280,139 @@ func (a *Agent) Down() error {
 }
 
 func (a *Agent) Close() {
-	// Stop any goroutine that is running for this connection.
-	a.cancel <- struct{}{}
-
-	if a.tun != nil {
-		err := a.tun.Close()
-		if err != nil {
-			a.log.Errorf("Failed to close tunnel: %v", err)
-		}
-		a.tun = nil
+	select {
+	case a.cancel <- struct{}{}:
+	default:
+		// Channel might be full or nil. Just ignore.
 	}
 
-	if a.tunDev != nil {
-		a.tunDev.Close()
-		a.tunDev = nil
-	}
+	// Wait for background goroutines to exit
+	a.wg.Wait()
 
 	if a.gw != nil {
 		err := a.gw.Close()
 		if err != nil {
-			a.log.Errorf("Failed to close gateway: %v", err)
+			a.log.Warnf("Failed to close gateway: %v", err)
 		}
 		a.gw = nil
 	}
+	if a.tun != nil {
+		err := a.tun.Close()
+		if err != nil {
+			a.log.Warnf("Failed to close tunnel: %v", err)
+		}
+		a.tun = nil
+	}
 
-	// Close the tunnel and the gateway.
 	if a.gwDev != nil {
+		a.gwDev.Down()
+		time.Sleep(250 * time.Millisecond)
 		a.gwDev.Close()
 		a.gwDev = nil
 	}
+
+	if a.tunDev != nil {
+		a.tunDev.Down()
+		time.Sleep(250 * time.Millisecond)
+		a.tunDev.Close()
+		a.tunDev = nil
+	}
+
+	a.cfg = nil
 }
 
-func (a *Agent) WaitForConnection(maxTries int) error {
-	if a.tunDev == nil {
-		return fmt.Errorf("tunnel not configured")
+func (a *Agent) ConnectWait(maxTries int) error {
+	connect := func(upFunc func() error, protocol string) error {
+		if err := upFunc(); err != nil {
+			return fmt.Errorf("failed to start agent: %w", err)
+		}
+		if a.tunDev == nil {
+			return fmt.Errorf("tunnel not configured")
+		}
+		hub := a.cfg.Files["wg-tunnel.conf"].Peers[0]
+		return a.checkConnection(protocol, hub.OrigEndpoint)
 	}
 
-	// Try to connect to agent hub using UDP 443. If it fails, try again using
-	// UDP 53 (DNS). Hopefully, this helps us to work around firewalls that block
-	// UDP 443.
-	tunCfg := a.cfg.Files["wg-tunnel.conf"]
-	hub := tunCfg.Peers[0]
-	for i := 0; i < maxTries*2; i++ {
-		if i == maxTries {
-			// Fallback to UDP 53.
-			hub.Endpoint = strings.Replace(tunCfg.Peers[0].Endpoint, ":443", ":53", 1)
-			err := a.tunDev.IpcSet(tunCfg.UAPIConfig())
-			if err != nil {
-				return fmt.Errorf("could not configure tunnel: %w", err)
-			}
-		}
-
-		// Our only peer is the agent hub. If we have a handshake time, we are
-		// connected.
-		wgStats, err := wireguard.DeviceStats(a.tunDev)
+	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))
+	if forceTCP {
+		a.log.Info("TCP connection forced. Connecting...")
+		err := connect(a.UpTCP, "TCP")
 		if err != nil {
-			return fmt.Errorf("failed getting tunnel stats: %w", err)
+			a.log.Infof("TCP connection failed: %v", err)
+			a.Close()
+			return err
 		}
-
-		a.log.Infof("Connecting to %s UDP (try %d/%d)...", hub.Endpoint, i+1, maxTries*2)
-
-		if wgStats.LastHandshakeTimeSec > 0 {
-			a.State.SetStatus(StatusConnected)
-			a.State.ConnectionType = ConnectionUDP
-			return nil
-		}
-
-		time.Sleep(5 * time.Second)
+		return nil
 	}
 
-	// If we failed to connect using UDP, try to connect using TCP.
-	a.log.Warnf("Failed to connect using UDP, trying TCP...")
+	a.log.Info("Connecting via UDP...")
+	var err error
+	if err = connect(a.Up, "UDP"); err == nil {
+		return nil
+	}
+	a.log.Warnf("UDP connection failed: %v", err)
 	a.Close()
-	a.UpTCP()
 
-	for i := 0; i < maxTries; i++ {
-		// Our only peer is the agent hub. If we have a handshake time, we are
-		// connected.
-		wgStats, err := wireguard.DeviceStats(a.tunDev)
-		if err != nil {
-			return fmt.Errorf("failed getting tunnel stats: %w", err)
+	a.log.Info("Trying TCP...")
+	err = connect(a.UpTCP, "TCP")
+	if err != nil {
+		a.log.Warnf("TCP connection failed: %v", err)
+		a.Close()
+		return err
+	}
+	return nil
+}
+
+func (a *Agent) checkConnection(protocol, endpoint string) error {
+	a.log.Infof("Connecting to %s %s (will wait up to 30 seconds)...", endpoint, protocol)
+
+	startTime := time.Now()
+	checkTicker := time.NewTicker(500 * time.Millisecond)
+	logTicker := time.NewTicker(5 * time.Second)
+	defer checkTicker.Stop()
+	defer logTicker.Stop()
+
+	for time.Since(startTime) < 30*time.Second {
+		select {
+		case <-checkTicker.C:
+			wgStats, err := wireguard.DeviceStats(a.tunDev)
+			if err != nil {
+				a.log.Warnf("Failed getting tunnel stats: %v", err)
+				continue // Don't fail immediately on stats error
+			}
+
+			if wgStats.LastHandshakeTimeSec > 0 {
+				a.log.Infof("WireGuard handshake successful over %s", protocol)
+				a.State.SetStatus(StatusConnected)
+				if protocol == "TCP" {
+					a.State.ConnectionType = ConnectionTCP
+				} else {
+					a.State.ConnectionType = ConnectionUDP
+				}
+				return nil
+			}
+
+		case <-logTicker.C:
+			elapsed := int(time.Since(startTime).Seconds())
+			a.log.Infof("Waiting for WireGuard handshake... %d/30 seconds", elapsed)
 		}
-
-		host, _, err := net.SplitHostPort(hub.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid endpoint: %w", err)
-		}
-		addr := net.JoinHostPort(host, "443")
-		a.log.Infof("Connecting to %s TCP (try %d/%d)...", addr, i+1, maxTries)
-
-		if wgStats.LastHandshakeTimeSec > 0 {
-			a.State.SetStatus(StatusConnected)
-			a.State.ConnectionType = ConnectionTCP
-			return nil
-		}
-
-		time.Sleep(5 * time.Second)
 	}
 
-	return fmt.Errorf("giving up after %d tries", maxTries*3)
+	return fmt.Errorf("connection timed out waiting for WireGuard handshake")
 }
 
 // UpdateState periodically updates the agent state.
 func (a *Agent) updateState(conn uint32) {
+	a.wg.Add(1)
+	defer a.wg.Done()
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-a.cancel:
-			a.log.Infof("Stopping agent state updater for connection %d", conn)
+			a.log.Infof("Stopped state updater for connection %d", conn)
 			return
 		case <-ticker.C:
 			dev := a.tunDev

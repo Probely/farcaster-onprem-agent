@@ -3,11 +3,14 @@ package netstack
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -224,12 +227,12 @@ func (ns *netstack) forwardTCP(fwd *netstackTCPFwd) {
 	// Try to connect to the server (upstream) first.
 	upstream, err := fwd.ConnectUpstream(keepaliveInterval, keepaliveCount)
 	if err != nil {
-		ns.log.Warnf("Upstream connection failed: %s", err)
+		ns.logConnectionError(err, "Upstream connection failed")
 		return
 	}
 	downstream, err := fwd.ConnectDownstream(keepaliveInterval, keepaliveCount)
 	if err != nil {
-		ns.log.Warnf("Downstream connection failed: %s", err)
+		ns.logConnectionError(err, "Downstream connection failed")
 		return
 	}
 
@@ -238,10 +241,20 @@ func (ns *netstack) forwardTCP(fwd *netstackTCPFwd) {
 	go proxyTCP(downstream, upstream, teardown)
 	go proxyTCP(upstream, downstream, teardown)
 
-	// Wait for the connections to close.
+	// Wait for the connections to close and handle errors.
 	err = <-teardown
 	if err != nil {
-		ns.log.Warnf("Stopped TCP proxy for connection: %v", err)
+		ns.logConnectionError(err, "TCP connection closed")
+	}
+
+	// Try to drain the second error message if there is one.
+	select {
+	case err2 := <-teardown:
+		if err2 != nil && err == nil {
+			ns.logConnectionError(err2, "TCP connection closed")
+		}
+	default:
+		// No second error, which is fine
 	}
 }
 
@@ -270,12 +283,12 @@ func (ns *netstack) forwardUDP(fwd *netstackUDPFwd) {
 
 	upstream, err := fwd.ConnectUpstream()
 	if err != nil {
-		ns.log.Warnf("Upstream connection failed: %s", err)
+		ns.logConnectionError(err, "Upstream connection failed")
 		return
 	}
 	downstream, err := fwd.ConnectDownstream()
 	if err != nil {
-		ns.log.Warnf("Downstream connection failed: %s", err)
+		ns.logConnectionError(err, "Downstream connection failed")
 		return
 	}
 
@@ -287,7 +300,7 @@ func (ns *netstack) forwardUDP(fwd *netstackUDPFwd) {
 	// Wait for the connections to close.
 	err = <-teardown
 	if err != nil {
-		ns.log.Warnf("Stopped UDP proxy for connection: %s", err)
+		ns.logConnectionError(err, "Stopped UDP proxy for connection")
 	}
 }
 
@@ -395,4 +408,24 @@ func (ns *netstack) handleDNSTCP(fwd *netstackTCPFwd) {
 // Parse a netstack IPv4 address and return a netip.Addr.
 func parseIPv4(addr tcpip.Address) netip.Addr {
 	return netip.AddrFrom4(addr.As4())
+}
+
+func isCommonNetworkError(err error) bool {
+	var netErr net.Error
+	if err == nil {
+		return true
+	}
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		(errors.As(err, &netErr) && netErr.Timeout()) ||
+		strings.Contains(err.Error(), "connection reset by peer")
+}
+
+func (ns *netstack) logConnectionError(err error, msg string) {
+	if isCommonNetworkError(err) {
+		ns.log.Debugf("%s: %v", msg, err)
+		return
+	}
+	ns.log.Warnf("%s: %v", msg, err)
 }
