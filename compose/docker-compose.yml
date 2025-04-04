@@ -21,9 +21,6 @@ services:
     - FARCASTER_AGENT_TOKEN
     - FARCASTER_API_URL
     - HTTP_PROXY
-    volumes:
-    - ./secrets:/secrets/farcaster/data:z,ro
-    - secrets:/secrets/farcaster/data_v2
     tmpfs:
     - /run
     cap_add:
