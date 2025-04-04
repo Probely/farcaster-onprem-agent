@@ -50,7 +50,7 @@ RUN set -eux \
     && cd -
 
 
-FROM debian:bullseye-slim
+FROM debian:12.10-slim
 COPY ./scripts/. /farcaster/bin/
 COPY --from=go_builder /build/farconn/farconn /usr/local/bin
 COPY --from=go_builder /build/farcaster-go/bin/farcasterd /usr/local/bin
