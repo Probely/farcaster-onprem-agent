@@ -45,5 +45,12 @@ spec:
           capabilities:
             add:
             - SETUID
+        volumeMounts:
+        - name: run-tmpfs
+          mountPath: /run
+      volumes:
+      - name: run-tmpfs
+        emptyDir:
+          medium: Memory
       terminationGracePeriodSeconds: 3
   minReadySeconds: 2
