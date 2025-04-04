@@ -2,18 +2,17 @@ version: '3.3'
 
 services:
   agent:
-    image: probely/farcaster-onprem-agent:v2
+    image: probely/farcaster-onprem-agent:v3
     container_name: probely-agent
     stop_grace_period: 1s
     # Environment variables for the Agent to work:
     #
     #   FARCASTER_AGENT_TOKEN
-    #   The token of the Agent, which is obtained when creating a Scanning Agent in the Probely app.
-    #   Learn more in https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent  
+    #   The Agent's token is obtained when creating a Scanning Agent in the Probely app.
+    #   Learn more at https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent  
     #
     #   FARCASTER_API_URL 
-    #   The URL of the Probely server. 
-    #   It is required for the Agent to communicate with the Probely server.
+    #   Probely's API URL 
     #
     #   HTTP_PROXY (optional)
     #   An advanced option that can be used to configure an HTTP proxy for the Agent to connect to Probely.
@@ -25,8 +24,6 @@ services:
     volumes:
     - ./secrets:/secrets/farcaster/data:z,ro
     - secrets:/secrets/farcaster/data_v2
-    devices:
-    - /dev/net/tun:/dev/net/tun
     tmpfs:
     - /run
     cap_add:
