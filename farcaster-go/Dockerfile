@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.20 as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.24 as go_builder
 COPY . /build/
 ARG TARGETARCH
 ARG VERSION
@@ -12,6 +12,7 @@ FROM debian:bookworm-slim
 COPY --from=go_builder /build/bin/farcasterd /usr/local/bin/farcasterd
 RUN set -eux \
     && apt-get update -y \
+    && apt-get dist-upgrade -y \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
     # Make sure that binaries were properly built

@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -19,18 +19,44 @@ import (
 	"github.com/mr-tron/base58"
 )
 
+const (
+	timeout = time.Second * 30
+)
+
 var defaultAPIURLs = []string{
 	"https://api.eu.probely.com",
 	"https://api.us.probely.com",
+	"https://api.au.probely.com",
 }
+
+var configClient = createHTTPClient()
 
 type ConfigFile struct {
 	Data   string
 	Secret string
 }
 
-var configClient = &http.Client{
-	Timeout: time.Second * 10,
+// createHTTPClient creates an HTTP client with the appropriate TLS configuration
+func createHTTPClient() *http.Client {
+	// Check if certificate verification should be skipped
+	skipVerify := false
+	if val := os.Getenv("FARCASTER_SKIP_CERT_VERIFY"); val != "" {
+		switch strings.ToLower(val) {
+		case "1", "ok", "true", "yes", "enable", "enabled":
+			skipVerify = true
+		}
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipVerify,
+		},
+	}
+
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
 }
 
 // Returns the Probely API URL
@@ -69,11 +95,11 @@ func FetchConfig(token, apiURL string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	// Check for errors
-	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("invalid server response: %d", resp.StatusCode)
 	}
 
-	if data, err = ioutil.ReadAll(resp.Body); err != nil {
+	if data, err = io.ReadAll(resp.Body); err != nil {
 		return nil, fmt.Errorf("could not download config: %s", err)
 	}
 

@@ -10,9 +10,10 @@ services:
         condition: service_healthy
       network:
         condition: service_healthy
-      tcpdump:
-        condition: service_healthy
-    network_mode: service:tcpdump
+      #tcpdump:
+      #  condition: service_healthy
+      #network_mode: service:tcpdump
+    network_mode: service:network
     environment:
       - HTTP_PROXY
       - HTTPS_PROXY
@@ -54,10 +55,10 @@ services:
       timeout: 1s
       retries: 3
       start_period: 10s
-    depends_on:
-      tcpdump:
-        condition: service_healthy
-    network_mode: service:tcpdump
+    #depends_on:
+    #  tcpdump:
+    #    condition: service_healthy
+    #network_mode: service:tcpdump
     cap_add:
       - NET_ADMIN
     restart: "no"
@@ -90,20 +91,20 @@ services:
     restart: always
     stop_grace_period: 1s
 
-  tcpdump:
-    image: alpine
-    healthcheck:
-      test: ["CMD", "pidof", "tcpdump"]
-      interval: 10s
-      timeout: 1s
-      retries: 3
-    command:
-    - /bin/ash
-    - -c
-    - apk add --no-cache tcpdump > /dev/null 2>&1
-      && tcpdump -s0 -n -i eth0
-    restart: always
-    stop_grace_period: 1s
+      #tcpdump:
+      #  image: alpine
+      #  healthcheck:
+      #    test: ["CMD", "pidof", "tcpdump"]
+      #    interval: 10s
+      #    timeout: 1s
+      #    retries: 3
+      #  command:
+      #  - /bin/ash
+      #  - -c
+      #  - apk add --no-cache tcpdump > /dev/null 2>&1
+      #    && tcpdump -s0 -n -i eth0
+      #  restart: always
+      #  stop_grace_period: 1s
 
 volumes:
   shared-logs:
