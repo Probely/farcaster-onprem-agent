@@ -39,17 +39,10 @@ if [ -z "${IPT_CMD}" ]; then
 fi
 
 function download_and_deploy_v2_config() {
-	echo -ne "Downloading agent configuration\t... "
-	if ! farconn config-agent "${SECRETS_DIR_V2}/"; then
+	echo -ne "Deploying agent configuration\t... "
+	if ! farconn config-agent "${WORK_DIR}/"; then
 		echo "failed"
 		echo "Could not configure the agent"
-		return 1
-	fi
-	echo "done"
-	echo -ne "Deploying agent configuration\t... "
-	if ! cp ${SECRETS_DIR_V2}/* "${WORK_DIR}"; then
-		echo "failed"
-		echo "Could not deploy config to ${WORK_DIR}"
 		return 1
 	fi
 	echo "done"
