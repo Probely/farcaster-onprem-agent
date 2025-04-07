@@ -147,7 +147,7 @@ git clone git@github.com:Probely/farcaster-onprem-agent.git
 root.**
 
 ```shell
-VERSION=local make build-local
+VERSION=0.0.0 make build-local
 ```
 
 Remember to reference your custom-built Docker images on the `docker-compose.yml`
