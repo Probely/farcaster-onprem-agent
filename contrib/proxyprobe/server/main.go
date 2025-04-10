@@ -286,6 +286,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, err := io.ReadAll(r.Body)
+	defer r.Body.Close()
 	if err != nil {
 		log.Printf("[ERROR] Failed to read request body from %s: %v", r.RemoteAddr, err)
 		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
@@ -302,6 +303,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		debugLog("Found matching response")
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(response)
 	if err != nil {
 		log.Printf("[ERROR] Failed to write response to %s: %v", r.RemoteAddr, err)
