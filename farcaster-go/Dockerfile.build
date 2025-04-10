@@ -1,13 +1,9 @@
-FROM debian:12.10-slim
+FROM golang:1.24-bullseye
 
 COPY . /build
 WORKDIR /build
 
 ARG VERSION
-
-ENV GOLANG_VERSION 1.24.2
-ENV GOLANG_SHA256SUM "238d9c065d09ff6af229d2e3b8b5e85e688318d69f4006fb85a96e41c216ea83"
-ENV GOPATH /go
 
 RUN set -eux \
     && apt-get update \
@@ -15,18 +11,4 @@ RUN set -eux \
     && apt-get install -y --no-install-recommends \
         make \
         ca-certificates \
-        curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && outfile="go.tar.gz" \
-    && curl -Lo ${outfile} "https://golang.org/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" \
-    && echo "${GOLANG_SHA256SUM}  ${outfile}" | sha256sum -c - \
-    && tar -C /usr/local -xzf ${outfile} \
-    && rm ${outfile} \
-    && export PATH="/usr/local/go/bin:$PATH" \
-    && mkdir -p ${GOPATH}/src ${GOPATH}/bin \
-    go version
-
-ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
-
-RUN set -eux \
     && make linux
