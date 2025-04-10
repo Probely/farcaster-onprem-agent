@@ -333,14 +333,14 @@ func proxyTCP(src, dst net.Conn) error {
 }
 
 func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
-	// Create a new UDP forwarder ASAP with a mutex to prevent races
+	// Create a new UDP forwarder with a mutex to prevent races
 	var fwdMutex sync.Mutex
-	fwdMutex.Lock() // Lock while creating forwarder
-	defer fwdMutex.Unlock()
+	fwdMutex.Lock()
 
 	// Create forwarder before accepting any packets
 	fwd, err := newNetstackUDPFwd(ns.stack, r, keepaliveInterval, ns.log)
 	if err != nil {
+		fwdMutex.Unlock()
 		ns.log.Debug("Failed creating UDP forwarder:", err)
 		return
 	}
@@ -348,9 +348,10 @@ func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
 	// Get the connection request.
 	cr := r.ID()
 
+	fwdMutex.Unlock()
+
 	if cr.LocalPort == 53 {
 		go func() {
-			fwdMutex.Unlock() // Unlock before handling
 			ns.handleDNSUDP(fwd)
 		}()
 		return
@@ -358,7 +359,6 @@ func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
 
 	// Forward the connection.
 	go func() {
-		fwdMutex.Unlock() // Unlock before forwarding
 		ns.forwardUDP(fwd)
 	}()
 }
@@ -568,6 +568,8 @@ func isCommonNetworkError(err error) bool {
 	return errors.Is(err, io.EOF) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, net.ErrClosed) ||
 		(errors.As(err, &netErr) && netErr.Timeout()) ||
 		strings.Contains(err.Error(), "connection reset by peer")
 }
