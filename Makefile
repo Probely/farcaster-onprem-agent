@@ -10,10 +10,21 @@ TAGS := -t $(REPO):v$(VER_MAJOR) \
 	-t $(REPO):v$(VER_MAJOR).$(VER_MINOR) \
 	-t $(REPO):v$(VERSION)
 
+MODERN_TAGS := -t $(REPO):v$(VER_MAJOR)-modern \
+	-t $(REPO):v$(VER_MAJOR).$(VER_MINOR)-modern \
+	-t $(REPO):v$(VERSION)-modern
+
 BUILDX_ARGS := --builder multiarch \
 	--build-arg "VERSION=$(VERSION)"
 
-.PHONY: all build build-local clean prepare check-version
+
+MODERN_BUILDX_ARGS = \
+	--build-arg RUST_BUILDER_BASE=rust:1-bookworm \
+	--build-arg GO_BUILDER_BASE=golang:1.24-bookworm \
+	--build-arg FINAL_BASE=ubuntu:25.04 \
+	--build-arg GCC_VERSION=12
+
+.PHONY: all build build-local build-modern build-local-modern clean prepare check-version
 
 all: build
 
@@ -27,6 +38,18 @@ build-local: check-version prepare
 	docker buildx build $(BUILDX_ARGS) \
 		--platform linux/amd64 \
 		-t $(REPO):v$(VERSION) \
+		--load .
+
+build-modern: check-version prepare
+	docker buildx build $(BUILDX_ARGS) $(MODERN_BUILDX_ARGS) \
+		--platform $(PLATFORMS) \
+		$(MODERN_TAGS) \
+		--push .
+
+build-local-modern: check-version prepare
+	docker buildx build $(BUILDX_ARGS) $(MODERN_BUILDX_ARGS) \
+		--platform linux/amd64 \
+		-t $(REPO):v$(VERSION)-modern \
 		--load .
 
 clean:
