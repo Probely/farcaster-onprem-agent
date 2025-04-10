@@ -103,7 +103,8 @@ var installCmd = &cobra.Command{
 		}
 
 		cfg := config.NewFarcasterConfig(appCfg.token, appCfg.apiURLs, logger)
-		if err := cfg.Load(); err != nil {
+		mustResolve := false
+		if err := cfg.Load(mustResolve); err != nil {
 			logger.Errorf("Failed to load configuration: %v", err)
 			os.Exit(1)
 		}
