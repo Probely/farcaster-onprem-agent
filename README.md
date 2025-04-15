@@ -12,7 +12,7 @@ The following diagram shows an example network topology for Farcaster agent base
 connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to 
 the Probely Cloud infrastructure.
 
-![Farcaster high-level network architecture](./assets/img_farcaster.png)
+![Farcaster high-level network architecture](./assets/img_Farcaster_Network_Overview.png)
 
 # System Resources
 
