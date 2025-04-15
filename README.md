@@ -8,9 +8,9 @@ tunnel, allowing Probely to scan your internal applications.
 The Agent is open-source, and the code is freely available on the official
 [repository](https://github.com/probely/farcaster-onprem-agent).
 
-The following diagram shows an example network topology depicting an on-premises
-network, the Agent, the Agent Hub (where on-premises Agents connect to),
-and Probely's infrastructure.
+The following diagram shows an example network topology for Farcaster agent based 
+connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to 
+the Probely Cloud infrastructure.
 
 ![Farcaster high-level network architecture](./assets/img_farcaster.png)
 
