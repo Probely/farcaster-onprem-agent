@@ -34,11 +34,11 @@ means: *all ports from 1024 to 2048, inclusive*.
 | Name           | Source     | Destination                          | Protocol     | Source Port          | Destination Port |
 | -------------- | ---------- | -------------------------------------| ------------ | -------------------- | -------------------- |
 | API            | `<agent-ip>`<sup>1</sup> | `api.probely.com`<sup>4</sup>        | `TCP`        | `any`         | `443`                  |
-| Tunnel         | `<agent-ip>` | `54.247.135.113`, `44.212.186.140`          | `UDP`        | `any`         | `443`                  |
+| Tunnel         | `<agent-ip>` | - EU: `54.247.135.113`<br/>- US: `44.212.186.140`<br/>- AU: `54.253.10.194`          | `UDP`        | `any`         | `443`                  |
 | DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | Scan           | `<agent-ip>` | `<target-ip>`<sup>2</sup>          | `TCP`        | `any`         | `<target-port>`<sup>3</sup>    |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | `52.17.201.157`, `52.72.180.55`| `TCP` | `any`                  | `53`, `80`, `443`, `389` |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | `52.17.201.157`, `52.72.180.55`| `UDP` | `any`                  | `53` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `52.17.201.157`<br/>- US: `52.72.180.55`<br/>- AU: `52.62.50.85`| `TCP` | `any`                  | `53`, `80`, `443`, `389` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `52.17.201.157`<br/>- US: `52.72.180.55`<br/>-AU: `52.62.50.85`| `UDP` | `any`                  | `53` |
 | Docker         | `<agent-ip>` | `auth.docker.io`, `registry*.docker.io`<sup>5</sup>     | `TCP`        | `any`         | `443`        |
 
 Notes:
@@ -128,7 +128,7 @@ Probely's support team.
   If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
   
   Alternatively, the agent can use an HTTP proxy to connect to Probely if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
-  While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113` and `44.212.186.140` on `UDP` port `443`.
+  While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
 
 
 # Building from source
