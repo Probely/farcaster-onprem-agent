@@ -130,6 +130,52 @@ Probely's support team.
   Alternatively, the agent can use an HTTP proxy to connect to Probely if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
   While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
 
+### Unsuccessful UDP connection issues
+   If the Agent is not connecting through UDP, and you are getting the log: 
+   
+   ```
+   ...
+   Connecting to Probely (via UDP)	... unsuccessful
+   Configuring fallback TCP tunnel	... done
+   Connecting to Probely (via TCP)	... done
+   ...
+   ```
+   
+   It's because the UDP connection is being blocked. 
+   
+   To confirm if nothing is blocking the UDP connections, you can set up a UDP server using the following script **outside your network** to "echo" the received messages:
+
+```python
+import socket
+
+def udp_server(host='0.0.0.0', port=12345):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((host, port))
+    print(f"UDP server listening on {host}:{port}")
+
+    while True:
+        data, client_address = sock.recvfrom(1024)
+        print(f"Received message from {client_address}: {data.decode()}")
+        response = f"Received your message: {data.decode()}"
+        sock.sendto(response.encode(), client_address)
+
+if __name__ == "__main__":
+    udp_server()
+```
+
+And test it with: 
+    
+```shell
+$ echo "AAAAAA" | nc xx.xx.xx.xx 12345
+Received your message: AAAAAA
+```
+
+You should test large messages:
+
+```shell
+$ python3 -c 'print("A"*2000)' | nc xx.xx.xx.xx 12345
+Received your message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA....
+```
 
 # Building from source
 
