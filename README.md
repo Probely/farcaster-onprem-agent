@@ -166,14 +166,14 @@ if __name__ == "__main__":
 And test it with: 
     
 ```shell
-$ echo "AAAAAA" | nc xx.xx.xx.xx 12345
+$ echo "AAAAAA" | nc -w 3 -u xx.xx.xx.xx 12345
 Received your message: AAAAAA
 ```
 
 You should test large messages:
 
 ```shell
-$ python3 -c 'print("A"*2000)' | nc xx.xx.xx.xx 12345
+$ python3 -c 'print("A"*2000)' | nc -w 3 -u xx.xx.xx.xx 12345
 Received your message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA....
 ```
 
