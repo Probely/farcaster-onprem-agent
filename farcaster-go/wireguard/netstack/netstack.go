@@ -53,9 +53,12 @@ type netstack struct {
 	once sync.Once
 
 	log *zap.SugaredLogger
+
+	// Enable IPv6 DNS resolution
+	useIPv6 bool
 }
 
-func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger) (*netstack, error) {
+func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool) (*netstack, error) {
 	// Create the stack with IPv4 support.
 	sopts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
@@ -108,7 +111,7 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger) (*netstack, 
 	inbound := make(chan *buffer.View, linkChanBufSize)
 
 	// DNS resolver.
-	resolver, err := newResolver(logger)
+	resolver, err := newResolver(logger, useIPv6)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create DNS resolver: %s", err)
 	}
@@ -125,6 +128,7 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger) (*netstack, 
 		cancel:   cancel,
 		once:     sync.Once{},
 		log:      logger,
+		useIPv6:  useIPv6,
 	}
 
 	// Forwarding.

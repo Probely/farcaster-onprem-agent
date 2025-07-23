@@ -30,8 +30,8 @@ type TUN struct {
 }
 
 // NewTUN creates a new TUN device using Netstack.
-func NewTUN(addr netip.Addr, name string, mtu int, logger *zap.SugaredLogger) (*TUN, error) {
-	ns, err := newNetstack(addr, mtu, logger)
+func NewTUN(addr netip.Addr, name string, mtu int, logger *zap.SugaredLogger, useIPv6 bool) (*TUN, error) {
+	ns, err := newNetstack(addr, mtu, logger, useIPv6)
 	if err != nil {
 		return nil, err
 	}
