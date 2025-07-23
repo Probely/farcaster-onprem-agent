@@ -1,7 +1,7 @@
 CONTAINER := farcaster-onprem-agent
 REPO := probely/$(CONTAINER)
 PLATFORMS := linux/arm64,linux/amd64
-
+LOCAL_PLATFORM := linux/$(shell uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 VERSION ?= $(error VERSION is undefined. Usage: VERSION=x.y.z make [target])
 VER_MAJOR := $(shell echo '$(VERSION)' | cut -d. -f1)
 VER_MINOR := $(shell echo '$(VERSION)' | cut -d. -f2)
@@ -36,7 +36,7 @@ build: check-version prepare
 
 build-local: check-version prepare
 	docker buildx build $(BUILDX_ARGS) \
-		--platform linux/amd64 \
+		--platform $(LOCAL_PLATFORM) \
 		-t $(REPO):v$(VERSION) \
 		--load .
 
@@ -48,7 +48,7 @@ build-modern: check-version prepare
 
 build-local-modern: check-version prepare
 	docker buildx build $(BUILDX_ARGS) $(MODERN_BUILDX_ARGS) \
-		--platform linux/amd64 \
+		--platform $(LOCAL_PLATFORM) \
 		-t $(REPO):v$(VERSION)-modern \
 		--load .
 
