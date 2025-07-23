@@ -11,7 +11,8 @@ var token = os.Getenv("FARCASTER_AGENT_TOKEN")
 
 func TestAgentLifecycle(t *testing.T) {
 	logger := zap.NewNop().Sugar()
-	a := New(token, nil, logger)
+	useIPv6 := false
+	a := New(token, nil, logger, useIPv6)
 	if a.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
@@ -37,7 +38,7 @@ func TestAgentLifecycle(t *testing.T) {
 	t.Logf("Closing agent a...")
 	a.Close()
 
-	b := New(token, nil, logger)
+	b := New(token, nil, logger, useIPv6)
 	if b.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}

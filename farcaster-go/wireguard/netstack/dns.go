@@ -33,9 +33,12 @@ type resolver struct {
 
 	// Logger.
 	log *zap.SugaredLogger
+
+	// Enable IPv6 DNS resolution
+	useIPv6 bool
 }
 
-func newResolver(logger *zap.SugaredLogger) (*resolver, error) {
+func newResolver(logger *zap.SugaredLogger, useIPv6 bool) (*resolver, error) {
 	resolvers, err := getSystemResolvers()
 	logger.Infof("System DNS resolvers: %v", resolvers)
 	// Add port 53 to resolvers.
@@ -55,6 +58,7 @@ func newResolver(logger *zap.SugaredLogger) (*resolver, error) {
 		},
 		resolvers: resolvers,
 		log:       logger,
+		useIPv6:   useIPv6,
 	}, nil
 }
 
@@ -94,6 +98,16 @@ func (r *resolver) Forward(query *dns.Msg, transport string) (*dns.Msg, error) {
 
 	question := query.Question[0]
 
+	// If IPv6 is disabled and this is a pure AAAA query, return an empty response
+	if !r.useIPv6 && question.Qtype == dns.TypeAAAA {
+		resp := new(dns.Msg)
+		resp.SetReply(query)
+		// Return success with no answer records
+		// This allows clients to fall back to A records without delays
+		r.log.Debugf("IPv6 disabled: returning empty response for AAAA query %s", question.Name)
+		return resp, nil
+	}
+
 	var resp *dns.Msg
 	var err error
 	if question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA {
@@ -131,7 +145,14 @@ func (r *resolver) lookupIP(ctx context.Context, query *dns.Msg) (*dns.Msg, erro
 
 	resp := new(dns.Msg)
 	resp.SetReply(query)
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+
+	// Use "ip4" network type when IPv6 is disabled to avoid AAAA queries to upstream resolvers
+	network := "ip"
+	if !r.useIPv6 {
+		network = "ip4"
+	}
+
+	ips, err := net.DefaultResolver.LookupIP(ctx, network, host)
 	if err != nil {
 		// Handle NXDOMAIN errors.
 		if dnsErr, ok := err.(*net.DNSError); ok {
@@ -166,6 +187,10 @@ func (r *resolver) lookupIP(ctx context.Context, query *dns.Msg) (*dns.Msg, erro
 				A: ip,
 			}
 		} else if question.Qtype == dns.TypeAAAA && ip.To4() == nil {
+			// Skip IPv6 addresses if IPv6 is disabled
+			if !r.useIPv6 {
+				continue
+			}
 			rr = &dns.AAAA{
 				Hdr: dns.RR_Header{
 					Name:   question.Name,

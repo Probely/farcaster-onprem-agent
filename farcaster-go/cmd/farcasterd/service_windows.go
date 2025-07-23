@@ -150,6 +150,9 @@ var installCmd = &cobra.Command{
 		if !slices.Equal(appCfg.apiURLs, defaultAPIURLs) && len(appCfg.apiURLs) > 0 {
 			svcArgs = append(svcArgs, "--api-url", appCfg.apiURLs[0])
 		}
+		if appCfg.ipv6 {
+			svcArgs = append(svcArgs, "--ipv6")
+		}
 
 		if err := winsvc.Install(settings.ServiceName, settings.Description, svcArgs); err != nil {
 			logger.Errorf("Failed to install service: %v", err)

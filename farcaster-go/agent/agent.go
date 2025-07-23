@@ -101,10 +101,12 @@ type Agent struct {
 	wg sync.WaitGroup
 	// Flag to track if Close has already been called
 	closing atomic.Bool
+	// Enable IPv6 DNS resolution
+	useIPv6 bool
 }
 
 // New creates a new agent.
-func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
+func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool) *Agent {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -114,6 +116,7 @@ func New(token string, apiURLs []string, logger *zap.SugaredLogger) *Agent {
 		apiURLs: apiURLs,
 		cancel:  make(chan struct{}, 1), // Use buffered channel to ensure signal is not lost
 		log:     logger,
+		useIPv6: useIPv6,
 	}
 }
 
@@ -231,7 +234,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	// route traffic from remote peers to the local network without requiring
 	// special privileges or devices (e.g. /dev/net/tun).
 	mtu := min(gwCfg.MTU, 1340)
-	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log)
+	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log, a.useIPv6)
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
 	}

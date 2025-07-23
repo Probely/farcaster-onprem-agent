@@ -38,6 +38,7 @@ type agentConfig struct {
 	logPath    string
 	debug      bool
 	apiURL     string
+	ipv6       bool
 }
 
 var (
@@ -66,8 +67,8 @@ var rootCmd = &cobra.Command{
 	Short: settings.Name + " creates a VPN to Probely",
 	Run: func(cmd *cobra.Command, args []string) {
 		if appCfg.showVers {
-			fmt.Fprintf(os.Stderr, "%s version %s on %s %s\n",
-				settings.Name, settings.Version, runtime.GOOS, runtime.GOARCH)
+			fmt.Fprintf(os.Stderr, "%s version %s (%s) on %s %s\n",
+				settings.Name, settings.Version, settings.Commit, runtime.GOOS, runtime.GOARCH)
 			os.Exit(0)
 		}
 		if err := parseConfig(&appCfg); err != nil {
@@ -93,6 +94,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.showVers, "version", "v", false, "Print the version and exit")
 	rootCmd.PersistentFlags().StringVarP(&appCfg.logPath, "log", "l", "", "Log file path. Log to stderr if not specified")
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.debug, "debug", "d", false, "Enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&appCfg.ipv6, "ipv6", "", false, "Enable IPv6/AAAA DNS query resolution")
 }
 
 // Execute runs the agent.
@@ -124,7 +126,7 @@ func runAgent(cfg agentConfig) {
 
 	// If the --check-token flag is set, we just check if the token is valid.
 	if cfg.checkToken {
-		a := agent.New(cfg.token, cfg.apiURLs, logger)
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6)
 		if err := a.CheckToken(); err != nil {
 			logger.Errorf("Token validation failed: %v", err)
 			exit(1)
@@ -149,7 +151,7 @@ func runAgent(cfg agentConfig) {
 	}
 
 	startAgent := func() error {
-		a := agent.New(cfg.token, cfg.apiURLs, logger)
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6)
 		if err := a.ConnectWait(maxConnTries); err != nil {
 			a.Close()
 			return err
