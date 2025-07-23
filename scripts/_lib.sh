@@ -168,7 +168,11 @@ start_dnsmasq() {
 	rundir=/run/dnsmasq
 	lport=1053
 	mkdir -p ${rundir}
-	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}"
+	# Suppress AAAA (IPv6) queries because some customer DNS resolvers
+	# malfunction when they encounter them. The tunnel currently
+	# carries only IPv4 traffic, so omitting these queries has no impact.
+	filter_aaaa="--filter-AAAA"
+	dnsmasq -x ${rundir}/dnsmasq.pid -p "${lport}" -i "${WG_GW_IF}" ${filter_aaaa}
 	gw_addr="$(wg_get_addr "${WG_GW_IF}")"
 	for proto in tcp udp; do
 		${IPT_CMD} -t nat -I PREROUTING -i "${WG_GW_IF}" -p ${proto} \
