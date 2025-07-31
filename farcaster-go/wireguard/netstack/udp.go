@@ -159,7 +159,7 @@ func (f *netstackUDPFwd) ConnectUpstream() (*net.UDPConn, error) {
 
 	// Set a connection timeout
 	dialer := net.Dialer{
-		Timeout:   5 * time.Second,
+		Timeout:   defaultConnectTimeout,
 		LocalAddr: &net.UDPAddr{Port: int(cr.RemotePort)},
 	}
 
@@ -208,8 +208,6 @@ func proxyUDP(src, dst net.Conn, teardown chan error, keepalive *keepaliveTimer)
 	buf := getBuffer()
 	defer putBuffer(buf)
 
-	readTimeout := 10 * time.Second
-
 	for {
 		select {
 		case <-keepalive.Stopped():
@@ -217,7 +215,7 @@ func proxyUDP(src, dst net.Conn, teardown chan error, keepalive *keepaliveTimer)
 			return
 		default:
 			// Set a read deadline to avoid indefinite blocking.
-			if err = src.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			if err = src.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
 				teardown <- fmt.Errorf("failed to set read deadline: %w", err)
 				return
 			}
@@ -234,7 +232,7 @@ func proxyUDP(src, dst net.Conn, teardown chan error, keepalive *keepaliveTimer)
 				return
 			}
 
-			if err = dst.SetWriteDeadline(time.Now().Add(readTimeout)); err != nil {
+			if err = dst.SetWriteDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
 				teardown <- fmt.Errorf("failed to set write deadline: %w", err)
 				return
 			}

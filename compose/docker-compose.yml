@@ -9,10 +9,10 @@ services:
     #
     #   FARCASTER_AGENT_TOKEN
     #   The Agent's token is obtained when creating a Scanning Agent in the Probely app.
-    #   Learn more at https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent  
+    #   Learn more at https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent
     #
-    #   FARCASTER_API_URL 
-    #   Probely's API URL 
+    #   FARCASTER_API_URL
+    #   Probely's API URL
     #
     #   HTTP_PROXY (optional)
     #   An advanced option that can be used to configure an HTTP proxy for the Agent to connect to Probely.
@@ -21,6 +21,7 @@ services:
     - FARCASTER_AGENT_TOKEN
     - FARCASTER_API_URL
     - HTTP_PROXY
+    - FARCASTER_FORCE_TCP
     tmpfs:
     - /run
     cap_add:

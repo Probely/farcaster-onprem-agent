@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-PROXY_REGEXP='^(http(s)?://)?(([0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+)@)?([0-9a-zA-Z._-]+)(:([0-9]+))?$'
+# Regex that handles both IPv4/hostname and IPv6 proxy formats
+# Matches: [protocol://][user:pass@][host|[ipv6]][:port][/path]
+PROXY_REGEXP='^(https?://)?(([^@/:]+:[^@/:]+)@)?((\[[0-9a-fA-F:]+\])|([0-9a-zA-Z._-]+))(:[0-9]+)?(/.*)?$'
 WORKDIR=/run/farcaster
 LOGDIR=/logs
 HUB_IP_TTL=300
@@ -183,43 +185,80 @@ start_dnsmasq() {
 }
 
 get_proxy_username() {
-	echo "${HTTP_PROXY:-}" |
-	sed -e 's/^"//' -e 's/"$//' |
-	sed -r 's/^http(s)?\:\/\///' |
-	grep '@' |
-	sed 's/@[^@]*$//' |
-	cut -d ':' -f 1 || echo ""
+	local proxy="${HTTP_PROXY:-}"
+	# Remove quotes
+	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
+	# Remove protocol
+	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
+	# Check if has userinfo (contains @)
+	if echo "${proxy}" | grep -q '@'; then
+		# Extract userinfo part (everything before the last @)
+		userinfo=$(echo "${proxy}" | sed 's/@[^@]*$//')
+		# Extract username (everything before : in userinfo)
+		echo "${userinfo}" | cut -d ':' -f 1
+	fi
 }
 
 get_proxy_password() {
-	echo "${HTTP_PROXY:-}" |
-	sed -e 's/^"//' -e 's/"$//' |
-	sed -r 's/^http(s)?\:\/\///' |
-	grep '@' |
-	sed 's/@[^@]*$//' |
-	cut -d ':' -f 2 || echo ""
+	local proxy="${HTTP_PROXY:-}"
+	# Remove quotes
+	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
+	# Remove protocol
+	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
+	# Check if has userinfo (contains @)
+	if echo "${proxy}" | grep -q '@'; then
+		# Extract userinfo part (everything before the last @)
+		userinfo=$(echo "${proxy}" | sed 's/@[^@]*$//')
+		# Check if userinfo contains a colon (has password)
+		if echo "${userinfo}" | grep -q ':'; then
+			# Extract password (everything after first : in userinfo)
+			echo "${userinfo}" | cut -d ':' -f 2-
+		fi
+	fi
 }
 
 get_proxy_address() {
-	echo "${HTTP_PROXY:-}" |
-	sed -e 's/^"//' -e 's/"$//' |
-	sed -r 's/^http(s)?\:\/\///' |
-	sed -r 's/\/.*//' |
-	sed 's/^.*@//'
+	local proxy="${HTTP_PROXY:-}"
+	# Remove quotes
+	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
+	# Remove protocol
+	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
+	# Remove path
+	proxy=$(echo "${proxy}" | sed -r 's|/.*$||')
+	# Remove userinfo (everything before last @)
+	echo "${proxy}" | sed 's|^.*@||'
 }
 
 get_proxy_host_from_address() {
-	echo "$1" |
-	sed -r 's/^http(s)?\:\/\///' |
-	cut -d ':' -f 1
+	local address="$1"
+	# Remove protocol if present
+	address=$(echo "${address}" | sed -r 's|^https?://||')
+	# IPv6 address
+	if echo "${address}" | grep -q '^\[.*\]'; then
+		echo "${address}" | sed -r 's|^(\[.*\]).*|\1|'
+	else
+		# IPv4 address or hostname
+		echo "${address}" | cut -d ':' -f 1
+	fi
 }
 
 get_proxy_port() {
-    port=$(echo "$1" | grep ':' | cut -d ':' -f 2)
-    if [ "${port}" = "" ]; then
-        port="8080"
-    fi
-    echo "${port}"
+	local address="$1"
+	local port=""
+
+	# IPv6 address
+	if echo "${address}" | grep -q '^\[.*\]:'; then
+		port=$(echo "${address}" | sed -r 's|^\[.*\]:||')
+	# IPv4 address or hostname
+	elif echo "${address}" | grep -q ':'; then
+		port=$(echo "${address}" | sed 's|^[^:]*:||')
+	fi
+
+	# Default to 8080 if no port specified
+	if [ -z "${port}" ] || [ "${port}" = "${address}" ]; then
+		port="8080"
+	fi
+	echo "${port}"
 }
 
 start_udp_over_tcp_tunnel() {
@@ -369,6 +408,24 @@ start_userspace_agent() {
 	${CMD}
 }
 
+scrub_secrets() {
+	local text="${1}"
+	local temp_file=$(mktemp)
+	echo "${text}" > "${temp_file}"
+
+	for secret in FARCASTER_AGENT_TOKEN HTTP_PROXY HTTPS_PROXY SOCKS5_PROXY; do
+		# Word boundary: (^|[^A-Za-z0-9_])
+		sed -i -E \
+			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*([^[:space:]\"']+)/\1${secret}=********/g" \
+			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*\"([^\"]*)\"/\1${secret}=\"********\"/g" \
+			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*'([^']*)'/\1${secret}='********'/g" \
+			"${temp_file}"
+	done
+
+	cat "${temp_file}"
+	rm -f "${temp_file}"
+}
+
 function print_log() {
 	set +e
 	echo
@@ -377,7 +434,12 @@ function print_log() {
 
 	log_file="${1}"
 	if ! [[ "${log_file}" =~ ^/dev/|^/proc/ ]]; then
-		cat "${log_file}"
+		# Clean up secrets from the log file.
+		local content
+		local scrubbed
+		content=$(cat "${log_file}" 2>/dev/null)
+		scrubbed=$(scrub_secrets "${content}" 2>/dev/null)
+		echo "${scrubbed}" > "${log_file}"
 	fi
 
 	echo

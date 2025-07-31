@@ -32,6 +32,9 @@ const (
 	keepaliveInterval = 120 * time.Second
 	keepaliveCount    = 4
 
+	defaultConnectTimeout = 10 * time.Second
+	defaultReadTimeout    = 10 * time.Second
+
 	maxInFlightTCP = 1024
 )
 
@@ -260,11 +263,12 @@ func (ns *netstack) forwardTCP(fwd *netstackTCPFwd) {
 	defer fwd.Cleanup()
 
 	// Try to connect to the server (upstream) first.
-	upstream, err := fwd.ConnectUpstream(keepaliveInterval, keepaliveCount)
+	upstream, err := fwd.ConnectUpstream()
 	if err != nil {
 		ns.logConnectionError(err, "Upstream connection failed")
 		return
 	}
+
 	downstream, err := fwd.ConnectDownstream(keepaliveInterval, keepaliveCount)
 	if err != nil {
 		ns.logConnectionError(err, "Downstream connection failed")

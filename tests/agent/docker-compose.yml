@@ -21,6 +21,7 @@ services:
       - FARCASTER_DEBUG_LEVEL
       - FARCASTER_AGENT_TOKEN
       - FARCASTER_API_URL
+      - FARCASTER_FORCE_TCP
     cap_add:
     - ${NET_ADMIN}
     volumes:

@@ -51,6 +51,7 @@ func createHTTPClient() *http.Client {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: skipVerify,
 		},
+		Proxy: http.ProxyFromEnvironment,
 	}
 
 	return &http.Client{
