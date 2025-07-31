@@ -12,6 +12,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/waiter"
+	"probely.com/farcaster/dialers"
 )
 
 // Forwarder request wrapper to abstract away the details of setting up
@@ -96,7 +97,7 @@ func (r *netstackTCPFwd) Cleanup() {
 	})
 }
 
-func (r *netstackTCPFwd) ConnectUpstream(timeout time.Duration, count int) (*net.TCPConn, error) {
+func (r *netstackTCPFwd) ConnectUpstream() (*net.TCPConn, error) {
 	// Start a background goroutine that cancels the upstream connection
 	// if the downstream connection closes or if Cleanup is triggered.
 	go func() {
@@ -113,20 +114,23 @@ func (r *netstackTCPFwd) ConnectUpstream(timeout time.Duration, count int) (*net
 	// TODO: Add IPv6 support.
 	serverIP := parseIPv4(cr.LocalAddress)
 	serverAddrPort := netip.AddrPortFrom(serverIP, cr.LocalPort)
+	serverAddr := serverAddrPort.String()
 
-	// Dial the upstream server.
-	var dialer net.Dialer
-	server, err := dialer.DialContext(*r.ctx, "tcp", serverAddrPort.String())
+	// TCP dialer that handles proxy configuration automatically
+	tcpDialer := dialers.NewTCPDialer(nil, defaultConnectTimeout)
+	server, err := tcpDialer.DialContext(*r.ctx, "tcp", serverAddr)
+
 	if err != nil {
-		// Reject the connection if dialing fails.
+		// Reject the connection if attempt fails.
 		r.fr.Complete(true)
 		return nil, err
 	}
 
 	// Set TCP keepalive options for the upstream connection.
-	setTCPConnTimeouts(server.(*net.TCPConn), keepaliveInterval, keepaliveCount)
+	tcpConn := server.(*net.TCPConn)
+	setTCPConnTimeouts(tcpConn, keepaliveInterval, keepaliveCount)
 
-	r.upstream = server.(*net.TCPConn)
+	r.upstream = tcpConn
 	return r.upstream, nil
 }
 

@@ -3,6 +3,26 @@
 # Exit on error, undefined variables
 set -eu
 
+extract_proxy_host() {
+    local proxy_url="$1"
+    # Remove quotes
+    proxy_url=$(echo "${proxy_url}" | sed -e 's/^"//' -e 's/"$//')
+    # Remove protocol
+    proxy_url=$(echo "${proxy_url}" | sed -r 's|^https?://||')
+    # Remove path
+    proxy_url=$(echo "${proxy_url}" | sed -r 's|/.*$||')
+    # Remove userinfo
+    proxy_url=$(echo "${proxy_url}" | sed 's|^[^@]*@||')
+
+    # IPv6 address
+    if echo "${proxy_url}" | grep -q '^\[.*\]'; then
+        echo "${proxy_url}" | sed -r 's|^(\[.*\]).*|\1|'
+    # IPv4 address or hostname
+    else
+        echo "${proxy_url}" | cut -d ':' -f 1
+    fi
+}
+
 init_environment() {
     echo "Starting Farcaster agent v${FARCASTER_VERSION:-dev}..." # Set in the Dockerfile
     umask 007
@@ -36,6 +56,18 @@ setup_proxy_environment() {
         export HTTP_PROXY="${HTTPS_PROXY}"
         export http_proxy="${HTTPS_PROXY}"
     fi
+
+    # Parse the proxy values and ensure their host is not localhost and not 127.0.0.1
+    for proxy in HTTP_PROXY HTTPS_PROXY; do
+        if [ -n "${!proxy:-}" ]; then
+            host=$(extract_proxy_host "${!proxy}")
+            if [ "${host}" = "localhost" ] || [ "${host}" = "127.0.0.1" ] || [ "${host}" = "[::1]" ] || [ "${host}" = "[::ffff:127.0.0.1]" ]; then
+                echo "${proxy} cannot be set to localhost."
+                exit 1
+            fi
+        fi
+    done
+
 }
 
 determine_run_mode() {
@@ -44,7 +76,7 @@ determine_run_mode() {
     # Check for WireGuard kernel support
     export WIREGUARD_SUPPORT=$(check_kernel_wireguard && echo "yes" || echo "no")
     if [ "${WIREGUARD_SUPPORT}" != "yes" ]; then
-        echo "WireGuard kernel support check failed."
+        echo "WireGuard kernel support check failed. Falling back to userspace mode..."
         echo "Make sure you are running Linux >= 5.6 and this container has the NET_ADMIN capability."
         export RUN_MODE="--user"
     fi
@@ -52,7 +84,7 @@ determine_run_mode() {
     export IPT_CMD=$(check_iptables || echo "")
     export IPT_SUPPORT=$([ -x "${IPT_CMD:-}" ] && echo "yes" || echo "no")
     if [ "${IPT_SUPPORT}" != "yes" ]; then
-        echo "iptables support check failed."
+        echo "iptables support check failed. Falling back to userspace mode..."
         echo "Make sure this container has the NET_ADMIN capability and iptables is installed."
         export RUN_MODE="--user"
     fi

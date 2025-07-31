@@ -16,13 +16,57 @@ import (
 
 	"github.com/coder/websocket"
 	"golang.org/x/net/context"
+	"golang.org/x/net/http/httpproxy"
 	"golang.org/x/net/proxy"
 )
+
+type ProxyFunc func(addr string) (*url.URL, error)
 
 // Dialer is an interface for a connection dialer
 type Dialer interface {
 	Connect() (net.Conn, error)
 	String() string
+}
+
+// TCPProxyFromEnvironment returns the proxy URL for the given address based on
+// HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables.
+// If the address should be connected to directly, nil is returned.
+func TCPProxyFromEnvironment(addr string) (*url.URL, error) {
+	// Create a fake URL with the address to check proxy rules
+	// We use http scheme as default for TCP connections
+	u := &url.URL{
+		Scheme: "http",
+		Host:   addr,
+	}
+	return httpproxy.FromEnvironment().ProxyFunc()(u)
+}
+
+// normalizeProxyURL adds the appropriate scheme to a proxy URL if missing
+func normalizeProxyURL(proxyStr string, isSocks bool) string {
+	if proxyStr == "" || strings.Contains(proxyStr, "://") {
+		return proxyStr
+	}
+
+	if isSocks {
+		return "socks5://" + proxyStr
+	}
+	return "http://" + proxyStr
+}
+
+// parseProxyURL tries to parse proxy URL from environment variables
+func parseProxyURL(vars []string) *url.URL {
+	for _, v := range vars {
+		if val := os.Getenv(v); val != "" {
+			// Add default scheme if missing
+			isSocks := strings.Contains(strings.ToUpper(v), "SOCKS")
+			val = normalizeProxyURL(val, isSocks)
+
+			if u, err := url.Parse(val); err == nil {
+				return u
+			}
+		}
+	}
+	return nil
 }
 
 // DirectDialer connects directly to the target
@@ -150,13 +194,7 @@ func NewSOCKS5Dialer(proxyURL *url.URL, addr string, timeout time.Duration) *SOC
 
 func (s *SOCKS5Dialer) Connect() (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: s.timeout}
-	auth := &proxy.Auth{}
-	if s.proxyURL.User != nil {
-		auth.User = s.proxyURL.User.Username()
-		if pass, ok := s.proxyURL.User.Password(); ok {
-			auth.Password = pass
-		}
-	}
+	auth := extractSOCKS5Auth(s.proxyURL)
 
 	socks5, err := proxy.SOCKS5("tcp", s.proxyURL.Host, auth, dialer)
 	if err != nil {
@@ -203,19 +241,14 @@ func (s *WebSocketDialer) Connect() (net.Conn, error) {
 	}
 
 	// Configure proxies
-	if s.proxy.Scheme == "http" || s.proxy.Scheme == "https" {
+	switch s.proxy.Scheme {
+	case "http", "https":
 		transport.Proxy = func(req *http.Request) (*url.URL, error) {
 			return s.proxy, nil
 		}
 
-	} else if s.proxy.Scheme == "socks5" {
-		auth := &proxy.Auth{}
-		if s.proxy.User != nil {
-			auth.User = s.proxy.User.Username()
-			if pass, ok := s.proxy.User.Password(); ok {
-				auth.Password = pass
-			}
-		}
+	case "socks5":
+		auth := extractSOCKS5Auth(s.proxy)
 		dialer, err := proxy.SOCKS5("tcp", s.proxy.Host, auth, &net.Dialer{
 			Timeout: s.timeout,
 		})
@@ -227,7 +260,7 @@ func (s *WebSocketDialer) Connect() (net.Conn, error) {
 			return dialer.(proxy.ContextDialer).DialContext(ctx, network, addr)
 		}
 
-	} else {
+	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", s.proxy.Scheme)
 	}
 
@@ -291,6 +324,21 @@ func generateProxyAuth(user *url.Userinfo) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
+// extractSOCKS5Auth extracts authentication from URL for SOCKS5 proxy
+func extractSOCKS5Auth(u *url.URL) *proxy.Auth {
+	if u == nil || u.User == nil {
+		return &proxy.Auth{}
+	}
+
+	auth := &proxy.Auth{
+		User: u.User.Username(),
+	}
+	if pass, ok := u.User.Password(); ok {
+		auth.Password = pass
+	}
+	return auth
+}
+
 // DialConfig is a configuration for creating dialers
 type DialConfig struct {
 	// Configuration options
@@ -306,8 +354,8 @@ func NewDialConfig() *DialConfig {
 		enableTLS:  os.Getenv("ENABLE_TLS") == "true",
 		enableWS:   os.Getenv("ENABLE_WS") == "true",
 		enableWSS:  os.Getenv("ENABLE_WSS") == "true",
-		httpProxy:  parseHTTPProxy(),
-		socksProxy: parseSOCKSProxy(),
+		httpProxy:  ParseHTTPProxy(),
+		socksProxy: ParseSOCKSProxy(),
 	}
 }
 
@@ -348,13 +396,9 @@ func (dc *DialConfig) WithHTTPProxyString(proxyURLStr string) *DialConfig {
 		return dc
 	}
 
-	if !strings.HasPrefix(proxyURLStr, "http://") && !strings.HasPrefix(proxyURLStr, "https://") {
-		proxyURLStr = "http://" + proxyURLStr
-	}
-
-	proxyURL, err := url.Parse(proxyURLStr)
-	if err == nil {
-		dc.httpProxy = proxyURL
+	proxyURLStr = normalizeProxyURL(proxyURLStr, false)
+	if u, err := url.Parse(proxyURLStr); err == nil {
+		dc.httpProxy = u
 	}
 	return dc
 }
@@ -366,13 +410,9 @@ func (dc *DialConfig) WithSOCKSProxyString(proxyURLStr string) *DialConfig {
 		return dc
 	}
 
-	if !strings.HasPrefix(proxyURLStr, "socks5://") {
-		proxyURLStr = "socks5://" + proxyURLStr
-	}
-
-	proxyURL, err := url.Parse(proxyURLStr)
-	if err == nil {
-		dc.socksProxy = proxyURL
+	proxyURLStr = normalizeProxyURL(proxyURLStr, true)
+	if u, err := url.Parse(proxyURLStr); err == nil {
+		dc.socksProxy = u
 	}
 	return dc
 }
@@ -381,25 +421,27 @@ func (dc *DialConfig) WithSOCKSProxyString(proxyURLStr string) *DialConfig {
 func (dc *DialConfig) Dialers(addr string, timeout time.Duration) []Dialer {
 	var dialers []Dialer
 
-	// If HTTP proxy is configured, add proxy strategies first
+	// Helper to create WebSocket URLs
+	makeWSURL := func(secure bool) *url.URL {
+		scheme := "ws"
+		if secure {
+			scheme = "wss"
+		}
+		return &url.URL{Scheme: scheme, Host: addr, Path: "/"}
+	}
+
+	// If HTTP proxy is configured, add proxy strategies
 	if dc.httpProxy != nil {
 		dialers = append(dialers,
 			NewHTTPProxyDialer(dc.httpProxy, addr, timeout))
 
-		if dc.enableTLS {
-			dialers = append(dialers,
-				NewHTTPProxyDialer(dc.httpProxy, addr, timeout))
-		}
-
 		if dc.enableWS {
-			wsURL := &url.URL{Scheme: "ws", Host: addr, Path: "/"}
 			dialers = append(dialers,
-				NewWebSocketDialer(wsURL, dc.httpProxy, false, timeout))
+				NewWebSocketDialer(makeWSURL(false), dc.httpProxy, false, timeout))
 
 			if dc.enableWSS {
-				wssURL := &url.URL{Scheme: "wss", Host: addr, Path: "/"}
 				dialers = append(dialers,
-					NewWebSocketDialer(wssURL, dc.httpProxy, false, timeout))
+					NewWebSocketDialer(makeWSURL(true), dc.httpProxy, false, timeout))
 			}
 		}
 	} else if dc.socksProxy != nil {
@@ -419,53 +461,76 @@ func (dc *DialConfig) Dialers(addr string, timeout time.Duration) []Dialer {
 
 	// Add WebSocket direct if enabled
 	if dc.enableWS {
-		wsURL := &url.URL{Scheme: "ws", Host: addr, Path: "/"}
 		dialers = append(dialers,
-			NewWebSocketDialer(wsURL, nil, false, timeout))
+			NewWebSocketDialer(makeWSURL(false), nil, false, timeout))
 
 		if dc.enableWSS {
-			wssURL := &url.URL{Scheme: "wss", Host: addr, Path: "/"}
 			dialers = append(dialers,
-				NewWebSocketDialer(wssURL, nil, false, timeout))
+				NewWebSocketDialer(makeWSURL(true), nil, false, timeout))
 		}
 	}
 
 	return dialers
 }
 
-func parseHTTPProxy() *url.URL {
-	proxyURLStr := os.Getenv("HTTP_PROXY")
-	if proxyURLStr == "" {
-		proxyURLStr = os.Getenv("HTTPS_PROXY")
-	}
-	if proxyURLStr == "" {
-		return nil
-	}
-
-	if !strings.HasPrefix(proxyURLStr, "http://") && !strings.HasPrefix(proxyURLStr, "https://") {
-		proxyURLStr = "http://" + proxyURLStr
-	}
-
-	proxyURL, err := url.Parse(proxyURLStr)
-	if err != nil {
-		return nil
-	}
-	return proxyURL
+func ParseHTTPProxy() *url.URL {
+	// Try each proxy variable in order
+	vars := []string{"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"}
+	return parseProxyURL(vars)
 }
 
-func parseSOCKSProxy() *url.URL {
-	proxyURLStr := os.Getenv("SOCKS5_PROXY")
-	if proxyURLStr == "" {
-		return nil
-	}
+func ParseSOCKSProxy() *url.URL {
+	return parseProxyURL([]string{"SOCKS5_PROXY"})
+}
 
-	if !strings.HasPrefix(proxyURLStr, "socks5://") {
-		proxyURLStr = "socks5://" + proxyURLStr
-	}
+// TCPDialer is a smart dialer that handles proxy configuration automatically
+type TCPDialer struct {
+	proxyFunc ProxyFunc
+	timeout   time.Duration
+}
 
-	proxyURL, err := url.Parse(proxyURLStr)
+// NewTCPDialer creates a new TCP dialer with the given proxy function and timeout
+func NewTCPDialer(proxyFunc ProxyFunc, timeout time.Duration) *TCPDialer {
+	if proxyFunc == nil {
+		// Default to environment-based proxy configuration.
+		proxyFunc = TCPProxyFromEnvironment
+	}
+	return &TCPDialer{
+		proxyFunc: proxyFunc,
+		timeout:   timeout,
+	}
+}
+
+// DialContext connects to the given address, using a proxy if configured
+func (d *TCPDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	// Determine if we should use a proxy
+	proxyURL, err := d.proxyFunc(addr)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("proxy resolution failed: %w", err)
 	}
-	return proxyURL
+
+	if proxyURL != nil {
+		// Use proxy connection
+		switch proxyURL.Scheme {
+		case "http", "https":
+			proxyDialer := NewHTTPProxyDialer(proxyURL, addr, d.timeout)
+			return proxyDialer.Connect()
+		case "socks5":
+			socksDialer := NewSOCKS5Dialer(proxyURL, addr, d.timeout)
+			return socksDialer.Connect()
+		default:
+			return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
+		}
+	}
+
+	// Direct connection
+	dialer := &net.Dialer{
+		Timeout: d.timeout,
+	}
+	return dialer.DialContext(ctx, network, addr)
+}
+
+// Dial connects to the given address (non-context version)
+func (d *TCPDialer) Dial(network, addr string) (net.Conn, error) {
+	return d.DialContext(context.Background(), network, addr)
 }
