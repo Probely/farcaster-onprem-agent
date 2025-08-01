@@ -11,7 +11,7 @@ services:
     - /bin/bash
     - -c
     - set -eu
-      && proxy_ip=$$(dig +short proxy) 
+      && proxy_ip=$$(dig +short proxy)
       && iptables -t nat -I PREROUTING -p tcp -m multiport --dport 80,443 -j REDIRECT --to-port 1080
       && iptables -t nat -I OUTPUT -p tcp -m multiport --dports 80,443 -j REDIRECT --to-port 1080
       && { curl ifconfig.me >/dev/null 2>&1 && echo "FAILED" || echo "OK"; }

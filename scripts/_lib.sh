@@ -117,8 +117,19 @@ get_iface_addr() {
 
 resolve_host() {
 	host="$1"
-	dig +short "${host}" | grep '^[.0-9]*$' | sort
-	return $?
+	# Check if it's already an IP address using ipcalc
+	if ! ipcalc -n -b "${host}" 2>&1 | grep -qi "INVALID ADDRESS"; then
+		echo "${host}"
+		return 0
+	fi
+	# Otherwise, resolve via DNS
+	resolved=$(dig a +short "${host}" | head -1)
+	if [ -z "${resolved}" ]; then
+		# DNS resolution failed, return empty
+		return 1
+	fi
+	echo "${resolved}"
+	return 0
 }
 
 HUB_IP_CHECK_TS=
@@ -229,7 +240,7 @@ get_proxy_address() {
 	echo "${proxy}" | sed 's|^.*@||'
 }
 
-get_proxy_host_from_address() {
+extract_host_from_proxy_address() {
 	local address="$1"
 	# Remove protocol if present
 	address=$(echo "${address}" | sed -r 's|^https?://||')
@@ -264,6 +275,11 @@ get_proxy_port() {
 start_udp_over_tcp_tunnel() {
 	local_udp_port="$1"
 	remote_ip=$(resolve_host "$2")
+	if [ -z "${remote_ip}" ]; then
+		echo "Failed to resolve host: $2" >&2
+		echo "-1"
+		return 1
+	fi
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
 		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
@@ -288,8 +304,8 @@ create_moproxy_config() {
 	user=$(get_proxy_username)
 	password=$(get_proxy_password)
 	address=$(get_proxy_address)
-	host=$(get_proxy_host_from_address "${address}")
-	ipaddr=$(dig +short "${host}" || echo "")
+	host=$(extract_host_from_proxy_address "${address}")
+	ipaddr=$(resolve_host "${host}" || echo "")
 	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
 	port=$(get_proxy_port "${address}")
 	auth=$(test ! -z "${user}" && printf "http username = %s\nhttp password = %s\n" "${user}" "${password}" || echo "")
@@ -316,7 +332,7 @@ set_proxy_redirect_rules() {
 	done
 	# Do not redirect traffic to the proxy itself
 	proxy_addr=$(get_proxy_address)
-	proxy_host=$(get_proxy_host_from_address "${proxy_addr}")
+	proxy_host=$(extract_host_from_proxy_address "${proxy_addr}")
 	${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${proxy_host}" -j RETURN
 
 	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port "${proxy_port}"
@@ -409,24 +425,27 @@ start_userspace_agent() {
 }
 
 scrub_secrets() {
-	local text="${1}"
-	local temp_file=$(mktemp)
-	echo "${text}" > "${temp_file}"
+	local text="$1"
+	shift  # Remove first argument, leaving only secrets
 
-	for secret in FARCASTER_AGENT_TOKEN HTTP_PROXY HTTPS_PROXY SOCKS5_PROXY; do
-		# Word boundary: (^|[^A-Za-z0-9_])
-		sed -i -E \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*([^[:space:]\"']+)/\1${secret}=********/g" \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*\"([^\"]*)\"/\1${secret}=\"********\"/g" \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*'([^']*)'/\1${secret}='********'/g" \
-			"${temp_file}"
+	local result="$text"
+
+	# Replace each secret value with asterisks
+	for secret in "$@"; do
+		# Skip empty values
+		[ -z "$secret" ] && continue
+
+		# Escape special regex characters in the secret
+		local escaped_secret=$(printf '%s\n' "$secret" | sed 's/[[\.*^$()+?{|]/\\&/g')
+
+		# Replace all occurrences of the secret with asterisks
+		result=$(echo "$result" | sed "s/${escaped_secret}/*******/g")
 	done
 
-	cat "${temp_file}"
-	rm -f "${temp_file}"
+	echo "$result"
 }
 
-function print_log() {
+function dump_log() {
 	set +e
 	echo
 	echo
@@ -438,8 +457,14 @@ function print_log() {
 		local content
 		local scrubbed
 		content=$(cat "${log_file}" 2>/dev/null)
-		scrubbed=$(scrub_secrets "${content}" 2>/dev/null)
-		echo "${scrubbed}" > "${log_file}"
+		# Ensure the log file is removed.
+		rm -f "${log_file}"
+		scrubbed=$(scrub_secrets "${content}" \
+			"${FARCASTER_AGENT_TOKEN:-}" \
+			"${HTTP_PROXY:-}" \
+			"${HTTPS_PROXY:-}" \
+			"${SOCKS5_PROXY:-}")
+		echo "${scrubbed}"
 	fi
 
 	echo
@@ -452,6 +477,7 @@ function print_log() {
 	echo
 	echo "===================================================================="
 	echo
+
 	sleep 120
 }
 

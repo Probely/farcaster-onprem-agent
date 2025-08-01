@@ -66,20 +66,20 @@ if [ "${v2_config_success}" != "true" ]; then
 	elif [ -f "${SECRETS_DIR_V2}/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V2}/wg-gateway.conf" ]; then
 		cp ${SECRETS_DIR_V2}/* "${WORK_DIR}/"
 	else
-		print_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}"
 		echo "Could not find the configuration files and the agent token is not set."
 	fi
 fi
 
 if [ ! -f "${WORK_DIR}/wg-tunnel.conf" ] || [ ! -f "${WORK_DIR}/wg-gateway.conf" ]; then
 	echo "Could not find the configuration files."
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 
 if ! HUB_HOST="$(wg_get_endpoint "${WG_TUN_IF}")"; then
 	echo "Could not find the hub host"
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 
@@ -98,7 +98,7 @@ echo -ne "Starting local DNS resolver\t... "
 if ! start_dnsmasq; then
 	echo "failed"
 	echo "Could not start local DNS resolver"
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 echo "done"
@@ -111,7 +111,7 @@ if ! start_proxy_maybe "${TCP_PROXY_PORT}"; then
 	echo -n "HTTP_PROXY defined, but could not set traffic redirection rules. "
 	echo "Ensure HTTP_PROXY is correct and this container has NET_ADMIN capabilities."
 	echo
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 echo "done"
@@ -140,7 +140,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 		echo
 		echo "Could not start fallback TCP tunnel."
 		proxy_warning
-		print_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}"
 		exit 1
 	fi
 	echo "done"
@@ -154,7 +154,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 		echo
 		echo "Could not establish TCP tunnel."
 		proxy_warning
-		print_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}"
 		exit 1
 	fi
 	echo "done"
@@ -170,7 +170,7 @@ if [ "${DISABLE_FIREWALL}" != "true" ] &&
 		echo "failed"
 		echo
 		echo "Could not set network gateway filter rules."
-		print_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}"
 		exit 1
 	else
 		echo "done"
@@ -184,7 +184,7 @@ if ! set_gw_nat_rules; then
 	echo "failed"
 	echo
 	echo "Could not set network gateway NAT rules."
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 echo "done"
@@ -194,7 +194,7 @@ if ! wg_start "${WG_GW_IF}"; then
 	echo "failed"
 	echo
 	echo "Could not start WireGuard gateway."
-	print_log "${LOG_FILE}"
+	dump_log "${LOG_FILE}"
 	exit 1
 fi
 echo "done"
