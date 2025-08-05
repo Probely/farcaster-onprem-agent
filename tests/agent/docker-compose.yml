@@ -23,7 +23,7 @@ services:
       - FARCASTER_API_URL
       - FARCASTER_FORCE_TCP
     cap_add:
-    - ${NET_ADMIN}
+      - ${NET_ADMIN:-SETUID}
     volumes:
     - shared-logs:/logs
     restart: "no"

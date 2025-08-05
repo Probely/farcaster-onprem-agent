@@ -77,6 +77,7 @@ RUN set -eux \
        dnsutils \
        wireguard-tools \
        ca-certificates \
+       ipcalc \
     && apt-get clean \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
     && ln -s /run/farcaster/wg-tunnel.conf /farcaster/etc/ \
