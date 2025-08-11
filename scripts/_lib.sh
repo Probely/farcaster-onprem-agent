@@ -13,10 +13,10 @@ INTERNAL_NETS="${INTERNAL_NETS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.
 
 check_iptables() {
 	if iptables-nft -t filter -L >/dev/null 2>&1; then
-		which iptables-nft
+		command -v iptables-nft
 		return 0
 	elif iptables-legacy -t filter -L >/dev/null 2>&1; then
-		which iptables-legacy
+		command -v iptables-legacy
 		return 0
 	fi
 	return 1
@@ -26,11 +26,11 @@ wg_setup_iface() {
 	iface="$1"
 
 	# Check if the kernel has wireguard support
-	ip link add "${iface}" type wireguard 2>/dev/null &&
-	ip link del "${iface}" &&
-	return 0
+	if ip link add "${iface}" type wireguard 2>/dev/null; then
+		ip link del "${iface}" && return 0
+	fi
 
-	return $?
+	return 1
 }
 
 wg_start() {
@@ -72,7 +72,7 @@ wg_get_latest_handshake() {
 	# Try to get the handshake for 90 seconds. The hub will update
 	# the known peers list every 30 seconds. Be sure to **not** make this
 	# value smaller than that.
-	for i in $(seq 90); do
+	for i in {1..90}; do
 		handshake=$(wg show "${iface}" latest-handshakes | awk -F' ' '{print $2}')
 		[ "${handshake}" != "0" ] && echo "${handshake}" && return
 		sleep 1
@@ -91,16 +91,24 @@ wg_get_addr() {
 }
 
 get_addr_from_conf() {
-	iface="$1"
-	regex="$2"
-	conf="${FARCASTER_PATH}/etc/${iface}.conf"
+    iface="$1"
+    regex="$2"
+    conf="${FARCASTER_PATH}/etc/${iface}.conf"
 
-	grep "${regex}" "${conf}" |
-		sed "s/${regex}//g" |
-		head -1 |
-		cut -d ':' -f 1 |
-		cut -d '/' -f 1
-	return $?
+    grep "${regex}" "${conf}" | awk -v re="${regex}" '{
+        sub(re, "");  # Remove prefix
+        gsub(/^[ \t]+|[ \t]+$/, "");  # Trim whitespace
+        if (match($0, /[[a-fA-F0-9:]+].*:/)) {  # IPv6 with potential brackets and port
+            sub(/]:[0-9]+$/, "");  # Remove port after ]
+            sub(/:[0-9]+$/, "");   # Remove port for non-bracketed (though invalid)
+        } else {
+            sub(/:[0-9]+$/, "");   # Remove port for IPv4/host
+        }
+        sub(/\/[0-9]+$/, "");      # Remove CIDR
+        print $0;
+        exit;  # Process only first line
+    }'
+    return $?
 }
 
 wait_for_iface() {
@@ -117,8 +125,18 @@ get_iface_addr() {
 
 resolve_host() {
 	host="$1"
-	dig +short "${host}" | grep '^[.0-9]*$' | sort
-	return $?
+	# If it's an IP address already (/netmask ok), we're done.
+	if ! ipcalc -n -b "${host}" 2>&1 | grep -qi "INVALID ADDRESS"; then
+		echo "${host}"
+		return 0
+	fi
+	# Resolve via DNS.
+	resolved=$(dig a +short "${host}" | head -1)
+	if [ -z "${resolved}" ]; then
+		return 1
+	fi
+	echo "${resolved}"
+	return 0
 }
 
 HUB_IP_CHECK_TS=
@@ -184,52 +202,54 @@ start_dnsmasq() {
 	done
 }
 
+parse_proxy() {
+    local proxy="${1:-${HTTP_PROXY:-}}"
+    # Remove quotes
+    proxy="${proxy#\"}"
+    proxy="${proxy%\"}"
+	# Ensure the proxy URL is valid
+    if ! [[ "${proxy}" =~ $PROXY_REGEXP ]]; then
+        echo "Invalid proxy format: ${proxy}" >&2
+        return 1
+    fi
+    # Extract with correct indices (adjusted for global regex groups)
+    local protocol="${BASH_REMATCH[1]:-}"
+    local username="${BASH_REMATCH[3]:-}"
+    local password="${BASH_REMATCH[4]:-}"  # Assuming regex has groups for user:pass
+    local host="${BASH_REMATCH[5]:-${BASH_REMATCH[6]}}"
+    local port="${BASH_REMATCH[7]#:}"
+    local path="${BASH_REMATCH[8]:-}"
+
+    # Default port
+    [[ -z "${port}" ]] && port="8080"
+
+    echo "username=${username}"
+    echo "password=${password}"
+    echo "host=${host}"
+    echo "port=${port}"
+    echo "path=${path}"
+    echo "protocol=${protocol}"
+}
+
 get_proxy_username() {
-	local proxy="${HTTP_PROXY:-}"
-	# Remove quotes
-	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
-	# Remove protocol
-	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
-	# Check if has userinfo (contains @)
-	if echo "${proxy}" | grep -q '@'; then
-		# Extract userinfo part (everything before the last @)
-		userinfo=$(echo "${proxy}" | sed 's/@[^@]*$//')
-		# Extract username (everything before : in userinfo)
-		echo "${userinfo}" | cut -d ':' -f 1
-	fi
+    local parsed=$(parse_proxy)
+    eval "${parsed}"
+    echo "${username}"
 }
 
 get_proxy_password() {
-	local proxy="${HTTP_PROXY:-}"
-	# Remove quotes
-	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
-	# Remove protocol
-	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
-	# Check if has userinfo (contains @)
-	if echo "${proxy}" | grep -q '@'; then
-		# Extract userinfo part (everything before the last @)
-		userinfo=$(echo "${proxy}" | sed 's/@[^@]*$//')
-		# Check if userinfo contains a colon (has password)
-		if echo "${userinfo}" | grep -q ':'; then
-			# Extract password (everything after first : in userinfo)
-			echo "${userinfo}" | cut -d ':' -f 2-
-		fi
-	fi
+    local parsed=$(parse_proxy)
+    eval "${parsed}"
+    echo "${password}"
 }
 
 get_proxy_address() {
-	local proxy="${HTTP_PROXY:-}"
-	# Remove quotes
-	proxy=$(echo "${proxy}" | sed -e 's/^"//' -e 's/"$//')
-	# Remove protocol
-	proxy=$(echo "${proxy}" | sed -r 's|^https?://||')
-	# Remove path
-	proxy=$(echo "${proxy}" | sed -r 's|/.*$||')
-	# Remove userinfo (everything before last @)
-	echo "${proxy}" | sed 's|^.*@||'
+    local parsed=$(parse_proxy)
+    eval "${parsed}"
+    echo "${host}${port:+:${port}}${path}"
 }
 
-get_proxy_host_from_address() {
+extract_host_from_proxy_address() {
 	local address="$1"
 	# Remove protocol if present
 	address=$(echo "${address}" | sed -r 's|^https?://||')
@@ -264,6 +284,11 @@ get_proxy_port() {
 start_udp_over_tcp_tunnel() {
 	local_udp_port="$1"
 	remote_ip=$(resolve_host "$2")
+	if [ -z "${remote_ip}" ]; then
+		echo "Failed to resolve host: $2" >&2
+		echo "-1"
+		return 1
+	fi
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
 		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
@@ -288,9 +313,8 @@ create_moproxy_config() {
 	user=$(get_proxy_username)
 	password=$(get_proxy_password)
 	address=$(get_proxy_address)
-	host=$(get_proxy_host_from_address "${address}")
-	ipaddr=$(dig +short "${host}" || echo "")
-	ipaddr=$(test ! -z "${ipaddr}" && echo "${ipaddr}" || echo "${host}")
+	host=$(extract_host_from_proxy_address "${address}")
+	ipaddr=$(resolve_host "${host}")
 	port=$(get_proxy_port "${address}")
 	auth=$(test ! -z "${user}" && printf "http username = %s\nhttp password = %s\n" "${user}" "${password}" || echo "")
 
@@ -316,7 +340,7 @@ set_proxy_redirect_rules() {
 	done
 	# Do not redirect traffic to the proxy itself
 	proxy_addr=$(get_proxy_address)
-	proxy_host=$(get_proxy_host_from_address "${proxy_addr}")
+	proxy_host=$(extract_host_from_proxy_address "${proxy_addr}")
 	${IPT_CMD} -t nat -A PROXY-REDIRECT -d "${proxy_host}" -j RETURN
 
 	${IPT_CMD} -t nat -A PROXY-REDIRECT -p tcp -j REDIRECT --to-port "${proxy_port}"
@@ -326,7 +350,6 @@ set_proxy_redirect_rules() {
 
 	# Traffic from the UDP to TCP tunnel. If a proxy is defined, use it
 	${IPT_CMD} -t nat -A OUTPUT -p tcp -m owner --uid-owner tcptun -j PROXY-REDIRECT
-	# ${IPT_CMD} -t nat -I OUTPUT -p tcp -m owner --gid-owner diag -j PROXY-REDIRECT
 
 	# Make sure traffic is allowed after being redirected
 	${IPT_CMD} -t filter -I INPUT -i "${WG_GW_IF}" -p tcp --dport "${proxy_port}" -j ACCEPT
@@ -408,25 +431,34 @@ start_userspace_agent() {
 	${CMD}
 }
 
-scrub_secrets() {
-	local text="${1}"
-	local temp_file=$(mktemp)
-	echo "${text}" > "${temp_file}"
-
-	for secret in FARCASTER_AGENT_TOKEN HTTP_PROXY HTTPS_PROXY SOCKS5_PROXY; do
-		# Word boundary: (^|[^A-Za-z0-9_])
-		sed -i -E \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*([^[:space:]\"']+)/\1${secret}=********/g" \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*\"([^\"]*)\"/\1${secret}=\"********\"/g" \
-			-e "s/(^|[^A-Za-z0-9_])${secret}[[:space:]]*=[[:space:]]*'([^']*)'/\1${secret}='********'/g" \
-			"${temp_file}"
-	done
-
-	cat "${temp_file}"
-	rm -f "${temp_file}"
+escape_glob_literal() {
+    # Escape glob metacharacters to ensure literal matching in parameter expansion.
+    local s="$1" out="" char
+    for (( i=0; i<${#s}; i++ )); do
+        char="${s:i:1}"
+        case "$char" in
+            \\|\*|\?|\[|\]|\!|\@|\(|\)|\{|\}|\+|\?|\|) out+="\\$char" ;;
+            *) out+="$char" ;;
+        esac
+    done
+    printf '%s' "$out"
 }
 
-function print_log() {
+scrub_secrets() {
+    local result="$1"
+    shift
+
+    for secret in "$@"; do
+        [[ -z "$secret" ]] && continue
+        local pat
+        pat=$(escape_glob_literal "$secret")
+        result="${result//${pat}/***}"
+    done
+
+    printf '%s\n' "$result"
+}
+
+function dump_log() {
 	set +e
 	echo
 	echo
@@ -438,8 +470,14 @@ function print_log() {
 		local content
 		local scrubbed
 		content=$(cat "${log_file}" 2>/dev/null)
-		scrubbed=$(scrub_secrets "${content}" 2>/dev/null)
-		echo "${scrubbed}" > "${log_file}"
+		# Ensure the log file is removed.
+		rm -f "${log_file}"
+		scrubbed=$(scrub_secrets "${content}" \
+			"${FARCASTER_AGENT_TOKEN:-}" \
+			"${HTTP_PROXY:-}" \
+			"${HTTPS_PROXY:-}" \
+			"${SOCKS5_PROXY:-}")
+		echo "${scrubbed}"
 	fi
 
 	echo
@@ -452,6 +490,7 @@ function print_log() {
 	echo
 	echo "===================================================================="
 	echo
+
 	sleep 120
 }
 
@@ -487,3 +526,4 @@ function check_kernel_wireguard() {
   return $(ip link add wg-test type wireguard 2>/dev/null &&
            ip link del wg-test > /dev/null 2>&1)
 }
+
