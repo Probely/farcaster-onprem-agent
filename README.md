@@ -8,8 +8,8 @@ tunnel, allowing Probely to scan your internal applications.
 The Agent is open-source, and the code is freely available on the official
 [repository](https://github.com/probely/farcaster-onprem-agent).
 
-The following diagram shows an example network topology for Farcaster agent based 
-connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to 
+The following diagram shows an example network topology for Farcaster agent based
+connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to
 the Probely Cloud infrastructure.
 
 ![Farcaster high-level network architecture](./assets/img_Farcaster_Network_Overview.png)
@@ -44,18 +44,18 @@ means: *all ports from 1024 to 2048, inclusive*.
 Notes:
 
 1. `<agent-ip>` is the internal IP of the machine on your network where Probely's Farcaster Agent is running. The agent uses it to communicate with the Probely server.
-2. `<target-ip>` is the internal IP of your web application. 
+2. `<target-ip>` is the internal IP of your web application.
 If your target is configured to use internal extra-hosts, include their IPs here.
 The same goes for the target login URL if a different internal web application serves it.
 3. `<target-port>` is the service port of the server of your web application.
 Typical values are 80 and 443.
-4. The IP addresses of these hosts are subject to change. We recommend allowing 
+4. The IP addresses of these hosts are subject to change. We recommend allowing
 web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent
 will use an HTTP proxy if you set the `HTTP_PROXY` variable.
 5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
 6. This server receives connections from potentially vulnerable systems on your infrastructure.
 It is used, for example, to detect "Log4Shell"-type vulnerabilities.
-   
+
 # Installation
 
 The agent runs on a Docker container. It should work on any system with a Docker installation.
@@ -117,22 +117,22 @@ Probely's support team.
   Connecting to Probely (via UDP) ... done
   Setting local gateway rules     ... done
   Starting WireGuard gateway      ... done
-  
+
   Running...
   ```
 
-  Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.  
+  Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.
   Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
 
 ### Connection issues
   If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
-  
-  Alternatively, the agent can use an HTTP proxy to connect to Probely if the `HTTP_PROXY` environment variable is set on the `docker-compose.yml` file.  
+
+  Alternatively, the agent can use a proxy to connect to Probely using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
   While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
 
 ### Unsuccessful UDP connection issues
-   If the Agent is not connecting through UDP, and you are getting the log: 
-   
+   If the Agent is not connecting through UDP, and you are getting the log:
+
    ```
    ...
    Connecting to Probely (via UDP)	... unsuccessful
@@ -140,9 +140,9 @@ Probely's support team.
    Connecting to Probely (via TCP)	... done
    ...
    ```
-   
-   It's because the UDP connection is being blocked. 
-   
+
+   It's because the UDP connection is being blocked.
+
    To confirm if nothing is blocking the UDP connections, you can set up a UDP server using the following script **outside your network** to "echo" the received messages:
 
 ```python
@@ -163,8 +163,8 @@ if __name__ == "__main__":
     udp_server()
 ```
 
-And test it with: 
-    
+And test it with:
+
 ```shell
 $ echo "AAAAAA" | nc -w 3 -u xx.xx.xx.xx 12345
 Received your message: AAAAAA
