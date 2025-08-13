@@ -12,7 +12,10 @@ services:
     #   Learn more at https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent
     #
     #   FARCASTER_API_URL
-    #   Probely's API URL
+    #   Probely's API URL. If not set, the Agent will use the API URLs for all regions.
+    #
+    #   FARCASTER_FORCE_TCP
+    #   If set to true, the Agent will use TCP to connect to Probely.
     #
     #   HTTP_PROXY (optional)
     #   An advanced option that can be used to configure an HTTP proxy for the Agent to connect to Probely.
@@ -25,7 +28,8 @@ services:
     tmpfs:
     - /run
     cap_add:
-    - NET_ADMIN
+      # Required for kernel support. If you remove this, the Agent will fall back to a userspace TCP/IP stack.
+      - NET_ADMIN
     restart: unless-stopped
 
 volumes:
