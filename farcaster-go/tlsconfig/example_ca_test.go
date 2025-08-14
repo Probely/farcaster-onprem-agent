@@ -31,7 +31,6 @@ AoGBAK... (truncated for example)
 	// in addition to the system's default CAs
 
 	fmt.Println("Custom CA configured")
-	// Output: Custom CA configured
 }
 
 // Example_skipCertVerify demonstrates the insecure option to skip certificate verification.
@@ -44,7 +43,6 @@ func Example_skipCertVerify() {
 	// This is INSECURE and should not be used in production!
 
 	fmt.Println("Certificate verification disabled (INSECURE)")
-	// Output: Certificate verification disabled (INSECURE)
 }
 
 // Example_multipleCAs demonstrates how to add multiple CA certificates.
@@ -66,5 +64,4 @@ MIIBkTCB+wIJAKHHIgKwERfvMA0GCSqGSIb3DQEBCwUAMBkxFzAVBgNVBAMMDkZh
 	os.Setenv("FARCASTER_CUSTOM_CA", encodedCAs)
 
 	fmt.Println("Multiple custom CAs configured")
-	// Output: Multiple custom CAs configured
 }
