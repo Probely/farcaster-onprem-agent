@@ -8,11 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/waiter"
 	"probely.com/farcaster/dialers"
+	"probely.com/farcaster/ipnamecache"
 )
 
 // Forwarder request wrapper to abstract away the details of setting up
@@ -39,9 +41,14 @@ type netstackTCPFwd struct {
 
 	upstream   *net.TCPConn   // Connection to the upstream server.
 	downstream *gonet.TCPConn // Connection to the local netstack client.
+
+	// IP->hostname cache.
+	ipCache *ipnamecache.IPNameCache
+	// Logger.
+	log *zap.SugaredLogger
 }
 
-func newNetstackTCPFwd(fr *tcp.ForwarderRequest) *netstackTCPFwd {
+func newNetstackTCPFwd(fr *tcp.ForwarderRequest, ipc *ipnamecache.IPNameCache, log *zap.SugaredLogger) *netstackTCPFwd {
 	// Create a cancellable context for managing upstream connection lifetime.
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -58,6 +65,8 @@ func newNetstackTCPFwd(fr *tcp.ForwarderRequest) *netstackTCPFwd {
 		we:               &we,
 		done:             make(chan struct{}),
 		downstreamClosed: downstreamClosed,
+		ipCache:          ipc,
+		log:              log,
 	}
 }
 
@@ -97,9 +106,9 @@ func (r *netstackTCPFwd) Cleanup() {
 	})
 }
 
-func (r *netstackTCPFwd) ConnectUpstream() (*net.TCPConn, error) {
-	// Start a background goroutine that cancels the upstream connection
-	// if the downstream connection closes or if Cleanup is triggered.
+func (r *netstackTCPFwd) ConnectUpstream(dialer dialers.Dialer) (*net.TCPConn, error) {
+	// Start a background goroutine that cancels the upstream connection if
+	// the downstream connection closes or if Cleanup is triggered.
 	go func() {
 		select {
 		case <-r.downstreamClosed:
@@ -113,12 +122,22 @@ func (r *netstackTCPFwd) ConnectUpstream() (*net.TCPConn, error) {
 
 	// TODO: Add IPv6 support.
 	serverIP := parseIPv4(cr.LocalAddress)
-	serverAddrPort := netip.AddrPortFrom(serverIP, cr.LocalPort)
+	serverPort := cr.LocalPort
+	serverAddrPort := netip.AddrPortFrom(serverIP, serverPort)
 	serverAddr := serverAddrPort.String()
 
-	// TCP dialer that handles proxy configuration automatically
-	tcpDialer := dialers.NewTCPDialer(nil, defaultConnectTimeout)
-	server, err := tcpDialer.DialContext(*r.ctx, "tcp", serverAddr)
+	// If enabled and cache has a hostname for this IP, switch to hostname:port
+	// before proxy decision so that NO_PROXY applies to the hostname naturally.
+	dialAddr := serverAddr
+	if r.ipCache != nil {
+		if name, ok := r.ipCache.Get(serverIP); ok && name != "" {
+			dialAddr = net.JoinHostPort(name, fmt.Sprintf("%d", serverPort))
+			r.log.Debugf("Using hostname for proxy connect: %s -> %s", serverAddr, dialAddr)
+		}
+	}
+
+	// Proxy-aware TCP dialer.
+	server, err := dialer.Dial("tcp", dialAddr)
 
 	if err != nil {
 		// Reject the connection if attempt fails.

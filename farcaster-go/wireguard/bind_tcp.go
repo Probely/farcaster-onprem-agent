@@ -17,7 +17,7 @@ import (
 
 const (
 	// Protocol constants
-	headerSize = 2 // Size of the uint16 big-endian length prefix
+	headerSize = 2 // Size of the uint16 big-endian length prefix.
 	mtu        = 1500
 
 	// Connection parameters
@@ -25,7 +25,7 @@ const (
 	defaultReadTimeout  = 20 * time.Second
 	defaultWriteTimeout = 20 * time.Second
 	keepAliveInterval   = 25 * time.Second
-	maxIdleTime         = 2 * time.Minute // Time after which a connection is considered stale
+	maxIdleTime         = 2 * time.Minute // Time after which a connection is considered stale.
 
 	// Fixed batch size of 1 for TCP
 	batchSize = 1
@@ -65,8 +65,8 @@ type TCPBind struct {
 	addrPort  netip.AddrPort // Parsed destination address
 	endpoint  string         // Original endpoint string
 	localPort uint16         // Local port to use for endpoint
-	logger    *zap.SugaredLogger
-	dialers   []dialers.Dialer // List of dialers to try when connecting
+	log       *zap.SugaredLogger
+	dialer    dialers.Dialer // Dialer to use for connections.
 
 	// Synchronization and related state
 	mu      sync.Mutex // Protects conn, open, dialing
@@ -77,12 +77,7 @@ type TCPBind struct {
 }
 
 // NewTCPBind creates a new TCP bind for Wireguard
-func NewTCPBind(src *netip.AddrPort, origEndpoint, endpoint string, logger *zap.SugaredLogger) (*TCPBind, error) {
-	return NewTCPBindWithDialConfig(src, origEndpoint, endpoint, nil, logger)
-}
-
-// NewTCPBindWithDialConfig creates a new TCP bind for Wireguard with a custom dial configuration.
-func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string, dialConfig *dialers.DialConfig, logger *zap.SugaredLogger) (*TCPBind, error) {
+func NewTCPBind(src *netip.AddrPort, origEndpoint, endpoint string, log *zap.SugaredLogger) (*TCPBind, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("server address cannot be empty")
 	}
@@ -97,19 +92,15 @@ func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string
 		return nil, fmt.Errorf("could not parse endpoint address: %w", err)
 	}
 
-	// Create dialers based on configuration
-	dc := dialConfig
-	if dc == nil {
-		dc = dialers.NewDialConfig()
-	}
-	dialers := dc.Dialers(origEndpoint, defaultDialTimeout)
+	// Create proxy-aware dialer.
+	dialer := dialers.NewTCPProxyDialer(defaultDialTimeout)
 
 	b := &TCPBind{
 		endpoint:  origEndpoint,
 		addrPort:  addrPort,
 		localPort: src.Port(),
-		logger:    logger,
-		dialers:   dialers,
+		log:       log,
+		dialer:    dialer,
 	}
 	// Initialize the condition variable, associating it with the main mutex
 	b.cond = sync.NewCond(&b.mu)
@@ -121,7 +112,7 @@ func NewTCPBindWithDialConfig(src *netip.AddrPort, origEndpoint, endpoint string
 // It returns a receive function and the local port to use.
 // Only one call to Open is allowed per bind instance.
 func (b *TCPBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
-	b.logger.Infof("Opening TCPBind")
+	b.log.Infof("Opening TCPBind")
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -143,7 +134,7 @@ func (b *TCPBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 
 // Close shuts down the bind and closes the active TCP connection, if any.
 func (b *TCPBind) Close() error {
-	b.logger.Infof("Closing TCPBind")
+	b.log.Infof("Closing TCPBind")
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -182,7 +173,7 @@ func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint
 	headerBuf := buf[:headerSize]
 
 	if err := conn.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
-		b.logger.Warnf("Failed to set read deadline: %v", err)
+		b.log.Warnf("Failed to set read deadline: %v", err)
 	}
 
 	_, err = io.ReadFull(conn, headerBuf)
@@ -191,7 +182,7 @@ func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint
 			return 0, nil
 		}
 
-		b.logger.Warnf("Failed to read header: %v", err)
+		b.log.Warnf("Failed to read header: %v", err)
 		b.closeCurrentConnectionOnError(conn)
 		return 0, err
 	}
@@ -201,12 +192,12 @@ func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint
 
 	// Validate packet size
 	if size == 0 {
-		b.logger.Warn("Received zero-size packet, ignoring")
+		b.log.Warn("Received zero-size packet, ignoring")
 		return 0, nil
 	}
 
 	if size > mtu-headerSize {
-		b.logger.Warnf("Packet too large: %d > %d", size, mtu-headerSize)
+		b.log.Warnf("Packet too large: %d > %d", size, mtu-headerSize)
 		b.closeCurrentConnectionOnError(conn)
 		return 0, fmt.Errorf("packet too large: %d > %d", size, mtu-headerSize)
 	}
@@ -216,12 +207,12 @@ func (b *TCPBind) receivePackets(bufs [][]byte, sizes []int, eps []conn.Endpoint
 
 	// Set a fresh read deadline for the payload
 	if err := conn.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
-		b.logger.Warnf("Failed to set read deadline for payload: %v", err)
+		b.log.Warnf("Failed to set read deadline for payload: %v", err)
 	}
 
 	_, err = io.ReadFull(conn, payloadBuf)
 	if err != nil {
-		b.logger.Warnf("Failed to read payload: %v", err)
+		b.log.Warnf("Failed to read payload: %v", err)
 		b.closeCurrentConnectionOnError(conn)
 		return 0, err
 	}
@@ -276,14 +267,14 @@ func (b *TCPBind) Send(bufs [][]byte, ep conn.Endpoint) error {
 		binary.BigEndian.PutUint16(header, uint16(len(buf)))
 		// Ensure we don't block indefinitely
 		if err := conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout)); err != nil {
-			b.logger.Warnf("Failed to set write deadline: %v", err)
+			b.log.Warnf("Failed to set write deadline: %v", err)
 		}
 
 		// Use net.Buffers to write both slices in a single syscall without copying
 		netBuffers := net.Buffers{header, buf}
 		_, err := (&netBuffers).WriteTo(conn)
 		if err != nil {
-			b.logger.Warnf("Failed to write packet: %v", err)
+			b.log.Warnf("Failed to write packet: %v", err)
 			b.closeCurrentConnectionOnError(conn)
 			return fmt.Errorf("failed to write packet: %w", err)
 		}
@@ -310,70 +301,66 @@ func (b *TCPBind) ensureConnection() (net.Conn, error) {
 	defer b.mu.Unlock()
 
 	for {
-		// Case 1: Connection already exists and we're still open
+		// Connection already exists and we're still open.
 		if b.conn != nil && b.open {
 			return b.conn, nil
 		}
 
-		// Case 2: Bind has been closed — return immediately
+		// Bind has been closed - return immediately.
 		if !b.open {
 			return nil, net.ErrClosed
 		}
 
-		// Case 3: Another goroutine is already dialing — wait for it to finish
+		// Another goroutine is already dialing - wait for it to finish.
 		if b.dialing {
 			b.cond.Wait()
 			continue
 		}
 
-		// Case 4: No connection and no dial in progress — this goroutine will dial
-		b.logger.Infof("No active connection, initiating dial sequence...")
+		// No connection and no dial in progress - this goroutine will dial.
+		b.log.Infof("No active connection, dialing...")
 		b.dialing = true
 		break
 	}
 
-	// Dialing happens outside the lock
+	// Dialing happens outside the lock.
 	b.mu.Unlock()
 
 	var conn net.Conn
 	var err error
 	dialSuccess := false
-	for _, dialer := range b.dialers {
-		b.logger.Infof("Trying to connect via %s...", dialer.String())
-		conn, err = dialer.Connect()
-		if err == nil {
-			b.logger.Infof("Connection successful via %s", dialer.String())
-			dialSuccess = true
-
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(keepAliveInterval)
-				tcpConn.SetNoDelay(true)
-			}
-			break
+	b.log.Infof("Trying to connect to %s...", b.endpoint)
+	conn, err = b.dialer.Dial("tcp", b.endpoint)
+	if err == nil {
+		b.log.Infof("Connection successful to %s", b.endpoint)
+		dialSuccess = true
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			tcpConn.SetKeepAlive(true)
+			tcpConn.SetKeepAlivePeriod(keepAliveInterval)
+			tcpConn.SetNoDelay(true)
 		}
-		b.logger.Warnf("Connection attempt via %s failed: %v", dialer.String(), err)
+	} else {
+		b.log.Warnf("Connection attempt to %s failed: %v", b.endpoint, err)
 	}
 
 	b.mu.Lock()
 	b.dialing = false
 
 	if !dialSuccess {
-		finalErr := fmt.Errorf("failed to connect to %s after %d attempts: %w",
-			b.endpoint, len(b.dialers), err)
+		finalErr := fmt.Errorf("failed to connect to %s: %w", b.endpoint, err)
 		b.cond.Broadcast()
 		return nil, finalErr
 	}
 
-	// Dial succeeded — check if we were closed while dialing
+	// Dial succeeded — check if we were closed while dialing.
 	if !b.open {
-		b.logger.Warnf("Connection established but bind was closed concurrently.")
+		b.log.Warnf("Connection established but bind was closed concurrently.")
 		go conn.Close()
 		b.cond.Broadcast()
 		return nil, net.ErrClosed
 	}
 
-	// Dial succeeded and we're still open — assign the connection
+	// Dial succeeded and we're still open — assign the connection.
 	b.conn = conn
 	b.cond.Broadcast()
 
@@ -397,10 +384,10 @@ func (b *TCPBind) closeCurrentConnectionOnError(conn net.Conn) {
 	}
 	b.mu.Unlock()
 
-	// Close the connection synchronously without holding the lock
+	// Close the connection synchronously without holding the lock.
 	if closedConn {
 		if err := conn.Close(); err != nil {
-			b.logger.Warnf("Error closing connection after error: %v", err)
+			b.log.Warnf("Error closing connection after error: %v", err)
 		}
 	}
 }

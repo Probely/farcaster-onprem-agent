@@ -23,6 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"probely.com/farcaster/dialers"
+	"probely.com/farcaster/ipnamecache"
 )
 
 const (
@@ -32,8 +34,8 @@ const (
 	keepaliveInterval = 120 * time.Second
 	keepaliveCount    = 4
 
-	defaultConnectTimeout = 10 * time.Second
-	defaultReadTimeout    = 10 * time.Second
+	defaultConnTimeout = 10 * time.Second
+	defaultReadTimeout = 10 * time.Second
 
 	maxInFlightTCP = 1024
 )
@@ -59,9 +61,18 @@ type netstack struct {
 
 	// Enable IPv6 DNS resolution
 	useIPv6 bool
+
+	// IP -> hostname cache built from DNS resolutions.
+	ipCache *ipnamecache.IPNameCache
+
+	// Use hostnames for proxy CONNECT/SOCKS5 when available.
+	proxyUseNames bool
+
+	// Dialer.
+	dialer dialers.Dialer
 }
 
-func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool) (*netstack, error) {
+func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (*netstack, error) {
 	// Create the stack with IPv4 support.
 	sopts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
@@ -113,8 +124,21 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 	// Channel to receive packets from the NIC.
 	inbound := make(chan *buffer.View, linkChanBufSize)
 
+	// IP name cache.
+	var ipc *ipnamecache.IPNameCache
+	if proxyUseNames {
+		normalizer := func(hostname string) string {
+			// Convert to lowercase.
+			hostname = strings.ToLower(hostname)
+			// Remove trailing dot if present.
+			hostname = strings.TrimSuffix(hostname, ".")
+			return hostname
+		}
+		ipc, _ = ipnamecache.New(ipnamecache.WithNormalizer(normalizer))
+	}
+
 	// DNS resolver.
-	resolver, err := newResolver(logger, useIPv6)
+	resolver, err := newResolver(logger, useIPv6, ipc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create DNS resolver: %s", err)
 	}
@@ -123,15 +147,18 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ns := &netstack{
-		stack:    s,
-		ep:       ep,
-		inbound:  inbound,
-		resolver: resolver,
-		ctx:      ctx,
-		cancel:   cancel,
-		once:     sync.Once{},
-		log:      logger,
-		useIPv6:  useIPv6,
+		stack:         s,
+		ep:            ep,
+		inbound:       inbound,
+		resolver:      resolver,
+		ctx:           ctx,
+		cancel:        cancel,
+		once:          sync.Once{},
+		dialer:        dialers.NewTCPProxyDialer(defaultConnTimeout),
+		log:           logger,
+		useIPv6:       useIPv6,
+		ipCache:       ipc,
+		proxyUseNames: proxyUseNames,
 	}
 
 	// Forwarding.
@@ -243,7 +270,7 @@ func (ns *netstack) WritePacket(buf *[]byte) {
 }
 
 func (ns *netstack) handleTCP(r *tcp.ForwarderRequest) {
-	fwd := newNetstackTCPFwd(r)
+	fwd := newNetstackTCPFwd(r, ns.ipCache, ns.log)
 
 	// Get the connection request.
 	cr := r.ID()
@@ -263,7 +290,7 @@ func (ns *netstack) forwardTCP(fwd *netstackTCPFwd) {
 	defer fwd.Cleanup()
 
 	// Try to connect to the server (upstream) first.
-	upstream, err := fwd.ConnectUpstream()
+	upstream, err := fwd.ConnectUpstream(ns.dialer)
 	if err != nil {
 		ns.logConnectionError(err, "Upstream connection failed")
 		return

@@ -1,33 +1,62 @@
 services:
-  gateway:
+  echoserver:
     build:
-      dockerfile: Dockerfile
       context: ../../
-      args:
-        - VERSION=0.0.0
+      dockerfile: tests/proxy/echoserver/Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9000"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+      - "9443:9443"
+
+  httpproxy:
+    image: mitmproxy/mitmproxy:latest
+    command: ["mitmdump", "--listen-host", "0.0.0.0", "--listen-port", "8080", "--mode", "regular", "--ssl-insecure"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8080"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+  socks5proxy:
+    image: serjs/go-socks5-proxy:latest
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1080"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+    ports:
+      - "1080:1080"
+
+  testrunner:
+    build:
+      context: ../../
+      dockerfile: tests/proxy/testrunner/Dockerfile
     depends_on:
-    - proxy
-    entrypoint:
-    - /bin/bash
-    - -c
-    - set -eu
-      && proxy_ip=$$(dig +short proxy)
-      && iptables -t nat -I PREROUTING -p tcp -m multiport --dport 80,443 -j REDIRECT --to-port 1080
-      && iptables -t nat -I OUTPUT -p tcp -m multiport --dports 80,443 -j REDIRECT --to-port 1080
-      && { curl ifconfig.me >/dev/null 2>&1 && echo "FAILED" || echo "OK"; }
-      && { moproxy --host 0.0.0.0 --port 1080 --test-dns 0.0.0.0:53 --http $${proxy_ip}:8888 > /dev/null 2>&1 & }
-      && { sleep 5; curl ifconfig.me > /dev/null 2>&1 && echo "OK" || echo "FAILED"; sleep 10; }
-    cap_drop:
-    - ALL
+      - echoserver
+      - httpproxy
+      - socks5proxy
     cap_add:
-    - DAC_OVERRIDE
-    - NET_ADMIN
-    - NET_RAW
-    - SETUID
-    - SETGID
+      - NET_ADMIN
+    environment:
+      - ECHO_TCP=echoserver:9000
+      - ECHO_WS=wss://echoserver:9443/
+      - HTTP_PROXY_URL=http://httpproxy:8080
+      - SOCKS_PROXY_URL=socks5://socks5proxy:1080
+      - ENFORCE_PROXY=${ENFORCE_PROXY:-false}
+    command: ["/usr/local/bin/testrunner", "-test.v", "-test.run", ".*"]
     restart: "no"
 
-  proxy:
-    image: vimagick/tinyproxy
-    restart: always
+volumes:
+  shared-logs:
 

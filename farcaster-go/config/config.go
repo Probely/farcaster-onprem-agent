@@ -25,43 +25,16 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 	"probely.com/farcaster/netutils"
 	"probely.com/farcaster/settings"
+	"probely.com/farcaster/tlsconfig"
 
 	"github.com/mr-tron/base58"
 )
 
 const (
-	defaultMTU  = 1420
-	defaultPort = 0
-	timeout     = time.Second * 30
+	defaultMTU     = 1420
+	defaultPort    = 0
+	defaultTimeout = time.Second * 30
 )
-
-var (
-	configClient = createHTTPClient()
-)
-
-// createHTTPClient creates an HTTP client with the appropriate TLS configuration
-func createHTTPClient() *http.Client {
-	// Check if certificate verification should be skipped
-	skipVerify := false
-	if val := os.Getenv("FARCASTER_SKIP_CERT_VERIFY"); val != "" {
-		switch strings.ToLower(val) {
-		case "1", "ok", "true", "yes", "enable", "enabled":
-			skipVerify = true
-		}
-	}
-
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: skipVerify,
-		},
-		Proxy: http.ProxyFromEnvironment,
-	}
-
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-}
 
 // WireGuardConfig represents a WireGuard configuration. Not all fields are
 // supported.
@@ -327,6 +300,21 @@ func (c *FarcasterConfig) resolveEndpoint(peer *Peer) error {
 	return fmt.Errorf("could not resolve host %s. All resolution attempts failed", host)
 }
 
+func (c *FarcasterConfig) getHTTPClient(timeout time.Duration) *http.Client {
+	tlsConfig, err := tlsconfig.GetTLSConfig()
+	if err != nil {
+		c.log.Warnf("Error getting TLS config: %v", err)
+		tlsConfig = &tls.Config{}
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+			Proxy:           http.ProxyFromEnvironment,
+		},
+	}
+}
+
 // Fetch the configuration from the API.
 func (c *FarcasterConfig) fetch(url string) ([]byte, error) {
 	var data []byte
@@ -352,7 +340,8 @@ func (c *FarcasterConfig) fetch(url string) ([]byte, error) {
 	req.Header.Set("User-Agent", userAgent)
 
 	// Send the request.
-	resp, err := configClient.Do(req)
+	client := c.getHTTPClient(defaultTimeout)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

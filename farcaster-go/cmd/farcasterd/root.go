@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,16 +30,17 @@ const (
 )
 
 type agentConfig struct {
-	token      string
-	apiURLs    []string
-	checkToken bool
-	controlAPI string
-	group      string
-	showVers   bool
-	logPath    string
-	debug      bool
-	apiURL     string
-	ipv6       bool
+	token         string
+	apiURLs       []string
+	checkToken    bool
+	controlAPI    string
+	group         string
+	showVers      bool
+	logPath       string
+	debug         bool
+	apiURL        string
+	ipv6          bool
+	proxyUseNames bool
 }
 
 var (
@@ -94,7 +96,16 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.showVers, "version", "v", false, "Print the version and exit")
 	rootCmd.PersistentFlags().StringVarP(&appCfg.logPath, "log", "l", "", "Log file path. Log to stderr if not specified")
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.debug, "debug", "d", false, "Enable debug logging")
+	// Default from env var if present
+	defaultProxyUseNames := false
+	if v := strings.TrimSpace(os.Getenv("FARCASTER_PROXY_NAMES")); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			defaultProxyUseNames = b
+		}
+	}
+
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.ipv6, "ipv6", "", false, "Enable IPv6/AAAA DNS query resolution")
+	rootCmd.PersistentFlags().BoolVar(&appCfg.proxyUseNames, "proxy-names", defaultProxyUseNames, "Use hostnames instead of IPs in proxy CONNECT/SOCKS5 requests")
 }
 
 // Execute runs the agent.
@@ -126,7 +137,7 @@ func runAgent(cfg agentConfig) {
 
 	// If the --check-token flag is set, we just check if the token is valid.
 	if cfg.checkToken {
-		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6)
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames)
 		if err := a.CheckToken(); err != nil {
 			logger.Errorf("Token validation failed: %v", err)
 			exit(1)
@@ -151,7 +162,7 @@ func runAgent(cfg agentConfig) {
 	}
 
 	startAgent := func() error {
-		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6)
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames)
 		if err := a.ConnectWait(maxConnTries); err != nil {
 			a.Close()
 			return err

@@ -27,6 +27,7 @@ UDP2TCP_PORT=8443
 # The WireGuard protocol requires the client to handshake at most 180 seconds apart
 MAX_WG_HANDSHAKE_TTL=190
 FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
+FARCASTER_PROXY_NAMES=${FARCASTER_PROXY_NAMES:-FARCASTER_PROXY_USE_HOSTNAMES}
 DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 
 . "${FARCASTER_PATH}"/bin/_lib.sh
