@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/miekg/dns"
 	"go.uber.org/zap"
+	"probely.com/farcaster/ipnamecache"
 )
 
 const (
@@ -36,9 +38,12 @@ type resolver struct {
 
 	// Enable IPv6 DNS resolution
 	useIPv6 bool
+
+	// IP->hostname cache.
+	ipCache *ipnamecache.IPNameCache
 }
 
-func newResolver(logger *zap.SugaredLogger, useIPv6 bool) (*resolver, error) {
+func newResolver(logger *zap.SugaredLogger, ipv6 bool, ipc *ipnamecache.IPNameCache) (*resolver, error) {
 	resolvers, err := getSystemResolvers()
 	logger.Infof("System DNS resolvers: %v", resolvers)
 	// Add port 53 to resolvers.
@@ -58,7 +63,8 @@ func newResolver(logger *zap.SugaredLogger, useIPv6 bool) (*resolver, error) {
 		},
 		resolvers: resolvers,
 		log:       logger,
-		useIPv6:   useIPv6,
+		useIPv6:   ipv6,
+		ipCache:   ipc,
 	}, nil
 }
 
@@ -187,7 +193,7 @@ func (r *resolver) lookupIP(ctx context.Context, query *dns.Msg) (*dns.Msg, erro
 				A: ip,
 			}
 		} else if question.Qtype == dns.TypeAAAA && ip.To4() == nil {
-			// Skip IPv6 addresses if IPv6 is disabled
+			// Skip IPv6 addresses if IPv6 is disabled.
 			if !r.useIPv6 {
 				continue
 			}
@@ -205,6 +211,20 @@ func (r *resolver) lookupIP(ctx context.Context, query *dns.Msg) (*dns.Msg, erro
 		}
 		r.log.Debugf("Appending RR to answer: %s -> %v", host, rr)
 		resp.Answer = append(resp.Answer, rr)
+	}
+
+	// Update the IP->hostname cache (A records only).
+	if r.ipCache != nil && question.Qtype == dns.TypeA {
+		// Convert []net.IP to []netip.Addr
+		addrs := make([]netip.Addr, 0, len(ips))
+		for _, ip := range ips {
+			if a, ok := netip.AddrFromSlice(ip); ok {
+				addrs = append(addrs, a)
+			}
+		}
+		if len(addrs) > 0 {
+			r.ipCache.Update(host, addrs)
+		}
 	}
 
 	// If we didn't find any IP, return a name error.

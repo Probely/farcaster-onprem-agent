@@ -10,9 +10,13 @@ import (
 var token = os.Getenv("FARCASTER_AGENT_TOKEN")
 
 func TestAgentLifecycle(t *testing.T) {
+	if token == "" {
+		t.Skip("Skipping TestAgentLifecycle: FARCASTER_AGENT_TOKEN not set")
+	}
 	logger := zap.NewNop().Sugar()
 	useIPv6 := false
-	a := New(token, nil, logger, useIPv6)
+	proxyUseNames := false
+	a := New(token, nil, logger, useIPv6, proxyUseNames)
 	if a.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
@@ -38,7 +42,7 @@ func TestAgentLifecycle(t *testing.T) {
 	t.Logf("Closing agent a...")
 	a.Close()
 
-	b := New(token, nil, logger, useIPv6)
+	b := New(token, nil, logger, useIPv6, proxyUseNames)
 	if b.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}

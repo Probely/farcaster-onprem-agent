@@ -2,12 +2,15 @@ package netutils
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"time"
+
+	"probely.com/farcaster/tlsconfig"
 )
 
 const cloudflareDoHEndpoint = "https://1.1.1.1/dns-query"
@@ -37,10 +40,18 @@ func LookupNetIPDoH(ctx context.Context, network, host string) ([]netip.Addr, er
 	params.Set("type", recordType)
 	baseURL.RawQuery = params.Encode()
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
+	// Use centralized TLS config for DoH queries
+	tlsConfig, err := tlsconfig.GetTLSConfig()
+	if err != nil {
+		tlsConfig = &tls.Config{}
 	}
 
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)

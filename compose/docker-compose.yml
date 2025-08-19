@@ -15,7 +15,10 @@ services:
     #   Probely's API URL. If not set, the Agent will use the API URLs for all regions.
     #
     #   FARCASTER_FORCE_TCP
-    #   If set to true, the Agent will use TCP to connect to Probely.
+    #   If set to true, the Agent will use TCP to connect to Probely/Snyk.
+    #
+    #   FARCASTER_PROXY_NAMES
+    #   If set to true, the Agent will use hostnames in proxy requests when available.
     #
     #   HTTP_PROXY (optional)
     #   An advanced option that can be used to configure an HTTP proxy for the Agent to connect to Probely.
@@ -25,10 +28,11 @@ services:
     - FARCASTER_API_URL
     - HTTP_PROXY
     - FARCASTER_FORCE_TCP
+    - FARCASTER_PROXY_NAMES
     tmpfs:
     - /run
     cap_add:
-      # Required for kernel support. If you remove this, the Agent will fall back to a userspace TCP/IP stack.
+      # Required to use the kernel WireGuard implementation. If you remove this, the Agent will fall back to a userspace implementation.
       - NET_ADMIN
     restart: unless-stopped
 

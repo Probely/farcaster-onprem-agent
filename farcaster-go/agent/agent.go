@@ -97,26 +97,29 @@ type Agent struct {
 	conns  atomic.Uint32
 	cancel chan struct{}
 	log    *zap.SugaredLogger
-	// WaitGroup to track background goroutines
+	// WaitGroup to track background goroutines.
 	wg sync.WaitGroup
-	// Flag to track if Close has already been called
+	// Flag to track if Close has already been called.
 	closing atomic.Bool
-	// Enable IPv6 DNS resolution
+	// Enable IPv6 DNS resolution.
 	useIPv6 bool
+	// Use hostnames in proxy requests when available.
+	proxyUseNames bool
 }
 
 // New creates a new agent.
-func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool) *Agent {
+func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) *Agent {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
 	return &Agent{
-		State:   newState(),
-		token:   token,
-		apiURLs: apiURLs,
-		cancel:  make(chan struct{}, 1), // Use buffered channel to ensure signal is not lost
-		log:     logger,
-		useIPv6: useIPv6,
+		State:         newState(),
+		token:         token,
+		apiURLs:       apiURLs,
+		cancel:        make(chan struct{}, 1), // Use buffered channel to ensure signal is not lost
+		log:           logger,
+		useIPv6:       useIPv6,
+		proxyUseNames: proxyUseNames,
 	}
 }
 
@@ -234,7 +237,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	// route traffic from remote peers to the local network without requiring
 	// special privileges or devices (e.g. /dev/net/tun).
 	mtu := min(gwCfg.MTU, 1340)
-	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log, a.useIPv6)
+	a.gw, err = netstack.NewTUN(addr, "gateway", mtu, a.log, a.useIPv6, a.proxyUseNames)
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
 	}
