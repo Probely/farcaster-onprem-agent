@@ -159,7 +159,7 @@ func (f *netstackUDPFwd) ConnectUpstream() (*net.UDPConn, error) {
 
 	// Set a connection timeout
 	dialer := net.Dialer{
-		Timeout:   defaultConnectTimeout,
+		Timeout:   defaultConnTimeout,
 		LocalAddr: &net.UDPAddr{Port: int(cr.RemotePort)},
 	}
 
