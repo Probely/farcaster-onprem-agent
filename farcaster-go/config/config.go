@@ -106,32 +106,47 @@ func NewFarcasterConfig(token string, apiURLs []string, logger *zap.SugaredLogge
 
 // Load fetches and parses the agent configuration from Probely's API.
 func (c *FarcasterConfig) Load(mustResolve bool) error {
-	var err error
+	type fetchResult struct {
+		url     string
+		data    []byte
+		headers http.Header
+		err     error
+	}
 
-	// Fetch the config using the API.
-	var data []byte
+	// Try each API URL, collecting diagnostics to report if all attempts fail.
+	var results []fetchResult
 	for _, url := range c.apiURLs {
-		if data, err = c.fetch(url); err == nil {
-			c.log.Infof("Fetched configuration from %s", url)
-			break
+		data, headers, err := c.fetch(url)
+		if err != nil {
+			results = append(results, fetchResult{
+				url:     url,
+				data:    data,
+				headers: headers,
+				err:     err,
+			})
+			continue
 		}
-	}
-	if err != nil {
-		c.log.Errorf("Error fetching configuration. Tried: %s", strings.Join(c.apiURLs, ", "))
-		return fmt.Errorf("could not fetch configuration: %s", err)
+
+		c.log.Infof("Fetched configuration from %s", url)
+		if err = c.build(data); err != nil {
+			return fmt.Errorf("could not build configuration: %w", err)
+		}
+		if err = c.parse(mustResolve); err != nil {
+			return fmt.Errorf("could not parse configuration: %w", err)
+		}
+		return nil
 	}
 
-	// Decrypt the keys and build the raw configuration files.
-	if err = c.build(data); err != nil {
-		return fmt.Errorf("could not build configuration: %s", err)
+	// All attempts failed. Log diagnostics for each failure.
+	for _, result := range results {
+		c.log.Errorf("Failed to fetch configuration from %s: %v", result.url, result.err)
+		for k, v := range result.headers {
+			c.log.Debugf("  %s: %s", k, strings.Join(v, ", "))
+		}
+		c.log.Debugf("Response body from %s: %s", result.url, result.data)
 	}
 
-	// Parse the configuration files.
-	if err = c.parse(mustResolve); err != nil {
-		return fmt.Errorf("could not parse configuration: %s", err)
-	}
-
-	return nil
+	return fmt.Errorf("could not fetch configuration from any of %d URL(s)", len(c.apiURLs))
 }
 
 func (c *FarcasterConfig) parse(mustResolve bool) error {
@@ -315,52 +330,51 @@ func (c *FarcasterConfig) getHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
-// Fetch the configuration from the API.
-func (c *FarcasterConfig) fetch(url string) ([]byte, error) {
-	var data []byte
-	var err error
+// fetch returns the agent configuration along with response headers.
+// Headers are returned even on error to aid in troubleshooting network issues.
+func (c *FarcasterConfig) fetch(url string) (data []byte, headers http.Header, err error) {
+	var tokenData []byte
 
 	// Create a public token. A public token is an identifier that allows us
 	// to fetch the configuration for this agent.
-	if data, err = base58.Decode(c.token); err != nil {
-		return nil, err
+	if tokenData, err = base58.Decode(c.token); err != nil {
+		return nil, nil, err
 	}
-	cksum := sha256.Sum256(data)
+	cksum := sha256.Sum256(tokenData)
 	pubToken := base58.Encode(cksum[:])
 
-	// Prepare the request.
 	u := fmt.Sprintf("%s/scanning-agents/%s/config-files/", url, pubToken)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Set the user agent.
 	userAgent := fmt.Sprintf("%s/%s (%s %s)", settings.Name, settings.Version, runtime.GOOS, runtime.GOARCH)
 	req.Header.Set("User-Agent", userAgent)
 
-	// Send the request.
 	client := c.getHTTPClient(defaultTimeout)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
-	// Check the response.
+	headers = resp.Header.Clone()
+
+	// Read response body before checking status to capture error pages.
+	data, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return data, headers, fmt.Errorf("could not read response body: %w", err)
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		if resp.StatusCode == 404 {
-			return nil, fmt.Errorf("agent token not found")
+			return data, headers, fmt.Errorf("agent token not found (HTTP %d)", resp.StatusCode)
 		}
-		return nil, fmt.Errorf("server response code: %d", resp.StatusCode)
+		return data, headers, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Read the response body.
-	if data, err = io.ReadAll(resp.Body); err != nil {
-		return nil, fmt.Errorf("could not download config: %s", err)
-	}
-
-	return data, nil
+	return data, headers, nil
 }
 
 // Decrypt configuration secrets, such as private keys.
