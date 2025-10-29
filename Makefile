@@ -19,10 +19,10 @@ BUILDX_ARGS := --builder multiarch \
 
 
 MODERN_BUILDX_ARGS = \
-	--build-arg RUST_BUILDER_BASE=rust:1-bookworm \
-	--build-arg GO_BUILDER_BASE=golang:1.24-bookworm \
+	--build-arg RUST_BUILDER_BASE=rust:1-trixie \
+	--build-arg GO_BUILDER_BASE=golang:1.24-trixie \
 	--build-arg FINAL_BASE=ubuntu:25.04 \
-	--build-arg GCC_VERSION=12
+	--build-arg GCC_VERSION=14
 
 .PHONY: all build build-local build-modern build-local-modern clean prepare check-version
 
