@@ -64,7 +64,7 @@ wg_update_endpoint() {
 	conf="${WORKDIR}/${iface}.conf"
 	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
 
-	sed -i "s/^Endpoint\s*=.*$/Endpoint = ${endpoint}/g" "${conf}"
+	sed -i "s/^Endpoint[ 	]*=.*$/Endpoint = ${endpoint}/g" "${conf}"
 }
 
 wg_get_latest_handshake() {
@@ -82,12 +82,12 @@ wg_get_latest_handshake() {
 
 wg_get_endpoint() {
 	iface="$1"
-	get_addr_from_conf "${iface}" "^Endpoint\s*=\s*"
+	get_addr_from_conf "${iface}" "^Endpoint[ 	]*=[ 	]*"
 }
 
 wg_get_addr() {
 	iface="$1"
-	get_addr_from_conf "${iface}" "^Address\s*=\s*"
+	get_addr_from_conf "${iface}" "^Address[ 	]*=[ 	]*"
 }
 
 get_addr_from_conf() {
