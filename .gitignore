@@ -1,3 +1,4 @@
 tmp/
 secrets/
 .vscode/
+.DS_Store

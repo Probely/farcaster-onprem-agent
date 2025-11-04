@@ -12,24 +12,38 @@ The following diagram shows an example network topology for Farcaster agent base
 connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to
 the Probely Cloud infrastructure.
 
+# Table of Contents
+- [Network Architecture Overview](#network-architecture-overview)
+- [System Resources](#system-resources)
+- [Network Requirements](#network-requirements)
+- [Installation](#installation)
+  - [Required software](#required-software)
+  - [System checks](#system-checks)
+- [Launch the agent](#launch-the-agent)
+  - [Configuration Options](#configuration-options)
+  - [Additional Windows Options](#additional-windows-options)
+  - [Windows Service Control](#windows-service-control)
+
+# Network Architecture Overview
 ![Farcaster high-level network architecture](./assets/img_Farcaster_Network_Overview.png)
+
+  ## Architecture Notes
+  1. Client edge security devices (FW, IPS, WAF, etc.) should be configured to whitelist Snyk API & Web Scanner and Asset Discovery service IPs.  Internal security devices (FW, IPS, WAF, etc.) should be configured to whitelist any scanning agent IPs.
+  2. Firewall protocol inspection must be disabled for Farcaster Agent connectivity.  TLS Inspection (e.g NGFW or CASB) is not currently supported and should be disabled for Agent connectivity rules in any edge/cloud security devices or services.
+  3. If required, Farcaster Agent will support tunnel connectivity via proxy, however performance may be impacted.  
+  4. OOB Vulnerability checks are utilized to verify vulnerabilities that allow an attacker to initiate a connection from the target to a remotely controlled ip address / server (e.g. log4shell)
+  5. api.probably.com IP addresses may be subject to change, we recommend configuring firewall rules to allow Scanning agents outbound https access based on DNS name, or allowing outbound communications to all https destinations.
+  6. Private container registries can be utilized if required.
 
 # System Resources
 
-The Agent is a Docker container requiring very few resources, as detailed in the following table.
+  The Agent is a Docker container requiring very few resources, as detailed in the following table.
 
-| CPU     | RAM     | Storage     |
-| ------- | ------- | ----------- |
-| 1       | 512 MB  | 1 GB        |
+  | CPU     | RAM     | Storage     |
+  | ------- | ------- | ----------- |
+  | 1       | 512 MB  | 1 GB        |
 
 # Network Requirements
-
-**NOTE**: You do not need to manually add firewall rules on most networks.
-Some rules may be required if the agent runs on a network with strict network policies (e.g., all **output** traffic
-is denied by default).
-
-To specify a port range, we use the `:` character. For example, `1024:2048`
-means: *all ports from 1024 to 2048, inclusive*.
 
 | Name           | Source     | Destination                          | Protocol     | Source Port          | Destination Port |
 | -------------- | ---------- | -------------------------------------| ------------ | -------------------- | -------------------- |
@@ -43,139 +57,146 @@ means: *all ports from 1024 to 2048, inclusive*.
 
 Notes:
 
-1. `<agent-ip>` is the internal IP of the machine on your network where Probely's Farcaster Agent is running. The agent uses it to communicate with the Probely server.
-2. `<target-ip>` is the internal IP of your web application.
-If your target is configured to use internal extra-hosts, include their IPs here.
-The same goes for the target login URL if a different internal web application serves it.
-3. `<target-port>` is the service port of the server of your web application.
-Typical values are 80 and 443.
-4. The IP addresses of these hosts are subject to change. We recommend allowing
-web access for the agent VM (HTTP and HTTPS ports). If this is not possible, the agent
-will use an HTTP proxy if you set the `HTTP_PROXY` variable.
-5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
-6. This server receives connections from potentially vulnerable systems on your infrastructure.
-It is used, for example, to detect "Log4Shell"-type vulnerabilities.
+  1. `<agent-ip>` is the IP address of the machine that the Farcaster Agent is installed on (e.g. the machine running Docker, the Kubernetes proxy IP for the pod, etc.) 
+  2. `<target-ip>` are the internal IPs of your web application or API targets. If your target requires authentication via another host or your targets are configured to use extra hosts, include those IPs here as well.
+  3. `<target-port>` is the service port of the server of your web application (typically 80, 443, 8080, 8443, etc.)
+  4. The IP addresses of these hosts are subject to change. We recommend allowing web access for the agent VM to all external destinations on tcp/443 (https). If this is not possible, the agent will use an HTTP proxy if you set the `HTTP_PROXY` variable.
+  5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
+  6. This server receives connections from potentially vulnerable systems on your infrastructure. It is used, for example, to detect "Log4Shell"-type vulnerabilities. These connections are optional, but may impact the ability of Snyk API & Web to verify related vulnerabilitites if the connections are not allowed.
 
 # Installation
 
-The agent runs on a Docker container. It should work on any system with a Docker installation.
+  The Farcaster agent can be deployed as a container in Docker or Kubernetes, or as Windows service.
 
-The agent needs a token to connect to Probely's network.
+  The agent needs a token to connect to Probely's network.
 
-> If you do not have an agent token, you can create one in the
-> [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
+  > If you do not have an agent token, you can create one in the
+  > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
 
-## Required software
+ ## Required software
 
-Both [Docker](https://docs.docker.com/engine/install/) and
-[Docker Compose](https://docs.docker.com/compose/install/) must be installed.
-Please make sure those requirements are met.
+  ### Docker
+  Both [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) must be installed.
 
-### Kubernetes (optional)
-We provide an example Agent Kubernetes deployment
-[here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
-If you need help setting the Agent up on a Kubernetes cluster, please contact
-Probely's support team.
+  ### Kubernetes 
+   We provide an example Agent Kubernetes deployment [here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
 
-## System checks
-* Before installing the agent container, check that your host can run it:
-  ```shell
-  curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farconn/host-check.sh
-  chmod +x host-check.sh
-  ./host-check.sh
-  ```
+   If you need help setting the Agent up on a Kubernetes cluster, please contact Probely's support team.
 
-  Verify that the checks succeeded:
-  ```shell
-  Checking if Docker is installed...                              [ok]
-  Launching test container...                                     [ok]
+  ### Windows
+  Download the latest Window binary from the releases page [here](https://github.com/Probely/farcaster-onprem-agent/releases)
+
+ ## System checks
+  Before installing the agent container on a Linux system, you can check that your host can run it by executing the following [script](https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farconn/host-check.sh) or run the command below:
+    ```shell
+    curl -LO https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farconn/host-check.sh
+    chmod +x host-check.sh
+    ./host-check.sh
+    ```
+
+    Verify that the checks succeeded:
+    ```shell
+    Checking if Docker is installed...                              [ok]
+    Launching test container...                                     [ok]
   ```
 
 ## Launch the agent
-* Use the `docker-compose.yml` you saved in **Step 1.** of
- [How to install a Scanning Agent](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).
+  * Use the `docker-compose.yml` you saved in **Step 1.** of
+  [How to install a Scanning Agent](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).
 
-* Start the Agent:
+  * Start the Agent:
 
-  ```shell
-  docker-compose up -d
-  ```
+    ```shell
+    docker-compose up -d
+    ```
 
-* Check that the Agent connected successfully
+  * Check that the Agent connected successfully
 
-  After starting the Agent, it should link-up with Probely. Run the following command:
-  ```shell
-  docker logs probely-agent
-  ```
+    After starting the Agent, it should link-up with Probely. Run the following command:
+    ```shell
+    docker logs probely-agent
+    ```
 
-  If everything is running correctly, you should see output similar to:
-  ```
-  Downloading agent configuration ... done
-  Deploying agent configuration   ... done
-  Starting local DNS resolver     ... done
-  Setting HTTP proxy rules        ... done
-  Connecting to Probely (via UDP) ... done
-  Setting local gateway rules     ... done
-  Starting WireGuard gateway      ... done
+    If everything is running correctly, you should see output similar to:
+    ```
+    Downloading agent configuration ... done
+    Deploying agent configuration   ... done
+    Starting local DNS resolver     ... done
+    Setting HTTP proxy rules        ... done
+    Connecting to Probely (via UDP) ... done
+    Setting local gateway rules     ... done
+    Starting WireGuard gateway      ... done
 
-  Running...
+    Running...
   ```
 
   Once up and running, the Agent in the Docker container knows the URL or IP of the target to scan from the target configuration in Probely. The Agent communicates with Probely to get this information before starting a scan.
   Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
 
-### Connection issues
-  If the Agent is not connecting to Probely, please ensure that your [firewall](#network-requirements) is properly configured.
+ ### Configuration Options
+   The following configuration options can be set via environment variables when running the agent
 
-  Alternatively, the agent can use a proxy to connect to Probely using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
-  While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
+  | Required/Optional           | Environment Variable     | Description |
+  | -------------- | ---------- | -------------------------------------|
+  |  Req   | FARCASTER_AGENT_TOKEN   | Agent API Key                |
+  |  Opt   | FARCASTER_API_URL                 | url of API server                |
+  |  Opt   | FARCASTER_DEBUG_LEVEL          | Logging level 0, 1, or 2               |
+  |  Opt   | FARCASTER_FORCE_TCP                 | TRUE, Skip UDP connectivity                |
+  |  Opt   | FARCASTER_SKIP_CERT_VERIFY          | TRUE, Skip Certificate verification for testing HTTPS inspection (FW, CASB, etc.)                |
+  |  Opt   | HTTP_PROXY                    | Use the configured proxy address for all connections                |
 
-### Unsuccessful UDP connection issues
-   If the Agent is not connecting through UDP, and you are getting the log:
+ ### Additional Windows Options
+  The Farcaster Agent can be run standalone or installed as a service in Windows, and controlled via environment variables or using the following command line switches as follows: 
 
-   ```
-   ...
-   Connecting to Probely (via UDP)	... unsuccessful
-   Configuring fallback TCP tunnel	... done
-   Connecting to Probely (via TCP)	... done
-   ...
-   ```
+    farcasterd -t <agent token> [optional switches]
 
-   It's because the UDP connection is being blocked.
+  | Required/Optional           | Switch    | Descrription |
+  | -------------- | ---------- | -------------------------------------|
+  | Req | -t, --token string     | Authentication token. Can either be the path to the token file, or the token itself
+  | Opt |   --api-url string     | Override the default API URL
+  | Opt |   --check-token        | Check if the token is valid and exit 
+  | Opt |   --control string     | Enable the control API on the Windows named pipe
+  | Opt |   -d, --debug          | Enable debug logging
+  | Opt |    --group string      | Group to grant access to the control API
+  | Opt |   --help               | help for farcasterd
+  | Opt |   --ipv6               | Enable IPv6/AAAA DNS query resolution
+  | Opt |   -l, --log string     | Log file path. Log to stderr if not specified
+  | Opt |   --proxy-names        | Use hostnames instead of IPs in proxy CONNECT/SOCKS5 requests
+  | Opt |   -v, --version        | Print the version and exit
 
-   To confirm if nothing is blocking the UDP connections, you can set up a UDP server using the following script **outside your network** to "echo" the received messages:
+ #### Windows Service Control
+    farcasterd service install -t [Agent token]   Install Farcasterd Service
+    farcasterd servive start | stop               Start or Stop Farcasterd Service
+    farcasterd service remove                     Uninstall Farcasterd Service  
 
-```python
-import socket
 
-def udp_server(host='0.0.0.0', port=12345):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((host, port))
-    print(f"UDP server listening on {host}:{port}")
+# Troubleshooting
+  Connection issues typically fall into one or more of the following categories:
 
-    while True:
-        data, client_address = sock.recvfrom(1024)
-        print(f"Received message from {client_address}: {data.decode()}")
-        response = f"Received your message: {data.decode()}"
-        sock.sendto(response.encode(), client_address)
+  ### Unable to download Agent configuration
+  - Agent is unable to connect to api.probely.com to download a configuration.
+   - Ensure the host system can resolve api.probely.com and connect via https using e.g. curl or chrome.
+   - Check to ensure proxy settings are not required for Agent connectivity.
+   - CASB / HTTPS Inpection capabilitites which intercept the HTTPS connection for decode and will result 
+  in the Agent being unable to verify the api.probely.com tls cerfificate.  We recommend configuring the 
+  device / servive performing HTTPS interception to allow the Farcaster Agent to connect directly to 
+  api.probely.com and the Farcaster hub, if that i snot possible tls cert verificationcan be disabled with 
+  the FARCASTER_SKIP_CERT_VERIFY=TRUE environment variable.
 
-if __name__ == "__main__":
-    udp_server()
-```
+  ### Unable to connect (UDP/443 or UDP & TCP/443)
+    - If firewalls are not permitting UDP/443 outbound from the agent to the appropriate Farcaster hub, as well as the appropriate return traffic, the connection will fall back to TCP/443 and the agent will show "Connected with Issues" in the Snyk API & Web UI.   
+    - If firewalls are not permitting UDP/443 or TCP/443 from the Agent to the Farcaster hub the agent will not be able to connect.
+    - In some cases protocol level firewall rules (e.g allow HTTPS protocol ONLY over TCP/443, allow QUIC prorocol ONLY over UDP/443, or allow "Standard Protocols only") the initial UDP/TCP handshake will be successful, but subsequent communications over UDP/443 or TCP/443 will be blocked as the traffic is not using standard protocols.  Protocol based rules should be disabled or set to allow the protocol identified by the firewall (typically wireguard) for Agent communications.
 
-And test it with:
+  Please refer to [network requirements](#network-requirements) for Agent connectivity requirements.
 
-```shell
-$ echo "AAAAAA" | nc -w 3 -u xx.xx.xx.xx 12345
-Received your message: AAAAAA
-```
+  ### Proxy Configuration Required
+    The agent can use a proxy to connect to Probely using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
 
-You should test large messages:
+  ### Performance Issues
+    While the agent can use an HTTP proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
 
-```shell
-$ python3 -c 'print("A"*2000)' | nc -w 3 -u xx.xx.xx.xx 12345
-Received your message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA....
-```
+
 
 # Building from source
 
@@ -195,10 +216,10 @@ root.**
 ```shell
 VERSION=0.0.0 make build-local
 ```
-
-Remember to reference your custom-built Docker images on the `docker-compose.yml`
-file or Kubernetes pod/deployment manifest you configure. If not specified,
-the default Probely docker Agent images are used.
+# Container Images
+Remember to reference your custom-built Docker images in your docker command, in your `docker-compose.yml`
+file,  or Kubernetes pod/deployment manifest.  If not specified,
+the default Probely docker Agent images are used.  Internal repositories can be used by pushing the appropriate images and modifying docker, docker compose, or Kubernetes manifests appropriately.
 
 # Security considerations
 
@@ -232,3 +253,8 @@ components, such as [WireGuard](https://www.wireguard.com/).
 * The Agent has minimal network requirements. Typical network requirements,
 such as public IP addresses and complex firewall rules, are unnecessary or minimized.
 * The Agent uses few hardware resources and is designed to scale easily.
+
+**Internal Firewalling**
+
+The agent may be installed in e.g. a partner DMZ or other firwalled segment to allow complete client control of the targets that can be accessed from the Agent, however, please keep in mind rules must allow connectivity for all Snyk API & Web targets, as well as any ancillary services and hosts required by those web apps and APIs.
+
