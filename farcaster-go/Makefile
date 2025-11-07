@@ -33,9 +33,9 @@ linux-compat-extract: linux-compat-build
 	done
 	docker rm ${NAME}-tmp-container
 
-windows:
-	GOOS=windows GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-windows-amd64.exe
-	GOOS=windows GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-windows-arm64.exe
+windows: check-env
+	GOOS=windows GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-windows-amd64-${VERSION}.exe
+	GOOS=windows GOARCH=arm64 go build ${LDFLAGS} -o bin/${NAME}-windows-arm64-${VERSION}.exe
 
 linux:
 	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/${NAME}-linux-amd64
