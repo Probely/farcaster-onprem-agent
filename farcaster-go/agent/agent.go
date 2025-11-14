@@ -393,6 +393,8 @@ func (a *Agent) ConnectWait(maxTries int) error {
 			a.gwDev = nil
 			a.log.Debug("Gateway WireGuard device closed")
 		}
+
+		a.cfg = nil
 	}
 
 	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))

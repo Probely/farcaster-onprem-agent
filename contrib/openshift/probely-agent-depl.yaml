@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
     name: farcaster-agent
+    namespace: probely
 spec:
   replicas: 1
   selector:
@@ -14,30 +15,26 @@ spec:
     spec:
       containers:
       - name: agent
-        privileged: true
         image: probely/farcaster-onprem-agent:v3
         imagePullPolicy: Always
+        env:
+        - name: FARCASTER_AGENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: farcaster-secrets
+              key: token
         resources:
           requests:
-            cpu: 250m
-            memory: 128Mi
+            cpu: "1"
+            memory: "128Mi"
         securityContext:
-          capabilities:
-            add:
-            - NET_ADMIN
+            allowPrivilegeEscalation: false
         volumeMounts:
-        - name: farcaster-secrets
-          mountPath: /secrets/farcaster/data
-          readOnly: true
-        - name: host-tun-dev
-          mountPath: /dev/net/tun
+        - name: run-tmpfs
+          mountPath: /run
       volumes:
-      - name: farcaster-secrets
-        projected:
-          sources:
-          - secret:
-              name: farcaster-tunnel-secrets
-          - secret:
-              name: farcaster-gateway-secrets
+      - name: run-tmpfs
+        emptyDir:
+          medium: Memory
       terminationGracePeriodSeconds: 3
   minReadySeconds: 2
