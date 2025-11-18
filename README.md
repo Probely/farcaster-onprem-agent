@@ -31,7 +31,7 @@ the Probely Cloud infrastructure.
   2. Firewall protocol inspection must be disabled for Farcaster Agent connectivity.  TLS Inspection (e.g NGFW or CASB) is not currently supported and should be disabled for Agent connectivity rules in any edge/cloud security devices or services.
   3. If required, Farcaster Agent will support tunnel connectivity via proxy, however performance may be impacted.  
   4. OOB Vulnerability checks are utilized to verify vulnerabilities that allow an attacker to initiate a connection from the target to a remotely controlled ip address / server (e.g. log4shell)
-  5. api.probably.com IP addresses may be subject to change, we recommend configuring firewall rules to allow Farcaster  agents outbound https access based on DNS name, or allowing outbound communications to all https destinations.
+  5. api.probely.com IP addresses may be subject to change, we recommend configuring firewall rules to allow Farcaster  agents outbound https access based on DNS name, or allowing outbound communications to all https destinations.
   6. Private container registries can be utilized if required.
 
 # System Resources
