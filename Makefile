@@ -5,6 +5,8 @@ LOCAL_PLATFORM := linux/$(shell uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64
 VERSION ?= $(error VERSION is undefined. Usage: VERSION=x.y.z make [target])
 VER_MAJOR := $(shell echo '$(VERSION)' | cut -d. -f1)
 VER_MINOR := $(shell echo '$(VERSION)' | cut -d. -f2)
+BINFMT_IMAGE ?= tonistiigi/binfmt
+BINFMT_CMD ?= docker run --rm --privileged $(BINFMT_IMAGE) --install all
 
 TAGS := -t $(REPO):v$(VER_MAJOR) \
 	-t $(REPO):v$(VER_MAJOR).$(VER_MINOR) \
@@ -56,8 +58,12 @@ clean:
 	docker buildx --builder multiarch prune -f
 
 prepare:
-	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	docker buildx create --name multiarch --driver docker-container --use || true
+	$(BINFMT_CMD)
+	@if ! docker buildx inspect multiarch >/dev/null 2>&1; then \
+		docker buildx create --name multiarch --driver docker-container --use --platform $(PLATFORMS); \
+	else \
+		docker buildx use multiarch; \
+	fi
 	docker buildx inspect --builder multiarch --bootstrap
 
 check-version:
