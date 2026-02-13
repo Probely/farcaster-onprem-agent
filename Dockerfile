@@ -1,6 +1,6 @@
 ARG RUST_BUILDER_BASE="rust:1-bullseye"
 ARG GO_BUILDER_BASE="golang:1.24-bullseye"
-ARG FINAL_BASE="debian:12.10-slim"
+ARG FINAL_BASE="debian:12-slim"
 ARG GCC_VERSION="10"
 
 FROM --platform=$BUILDPLATFORM ${RUST_BUILDER_BASE} AS rust_builder
