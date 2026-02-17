@@ -128,6 +128,7 @@ func newNetstackUDPFwd(
 		fr:        fr,
 		wq:        wq,
 		ep:        ep,
+		log:       log,
 		keepalive: newKeepaliveTimer(kaTimeout, log),
 	}
 
