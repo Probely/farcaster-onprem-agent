@@ -13,7 +13,7 @@
    ```
 4. Deploy the agent pod
    ```shell
-   kubectl apply -f https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/contrib/kubernetes/agent-depl.yaml
+   kubectl apply -f https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/refs/heads/main/contrib/kubernetes/agent-depl.yml
    ```
 5. Check that the agent is working properly
    ```shell
