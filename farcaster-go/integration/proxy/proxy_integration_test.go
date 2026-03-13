@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	d "probely.com/farcaster/dialers"
 )
 
@@ -74,7 +76,8 @@ func TestTCPViaEnvProxy(t *testing.T) {
 			} else {
 				t.Setenv("NO_PROXY", "")
 			}
-			dialer := d.NewTCPProxyDialer(5 * time.Second)
+			log := zap.NewNop().Sugar()
+			dialer := d.NewTCPProxyDialer(5*time.Second, log)
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel()
 			conn, err := dialer.DialContext(ctx, "tcp", target)

@@ -96,8 +96,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.showVers, "version", "v", false, "Print the version and exit")
 	rootCmd.PersistentFlags().StringVarP(&appCfg.logPath, "log", "l", "", "Log file path. Log to stderr if not specified")
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.debug, "debug", "d", false, "Enable debug logging")
-	// Default from env var if present
-	defaultProxyUseNames := false
+	// When a proxy is configured, use hostnames instead of IPs so that
+	// NO_PROXY entries like "example.com" are matched correctly.
+	defaultProxyUseNames := hasProxyEnv()
 	if v := strings.TrimSpace(os.Getenv("FARCASTER_PROXY_NAMES")); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			defaultProxyUseNames = b
@@ -222,6 +223,15 @@ func getToken(token string) string {
 		return envToken
 	}
 	return os.Getenv(envOldTokenName)
+}
+
+func hasProxyEnv() bool {
+	for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {
+		if os.Getenv(k) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func getAPIURLs(apiURL string) []string {

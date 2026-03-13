@@ -154,7 +154,7 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 		ctx:           ctx,
 		cancel:        cancel,
 		once:          sync.Once{},
-		dialer:        dialers.NewTCPProxyDialer(defaultConnTimeout),
+		dialer:        dialers.NewTCPProxyDialer(defaultConnTimeout, logger),
 		log:           logger,
 		useIPv6:       useIPv6,
 		ipCache:       ipc,
