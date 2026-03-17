@@ -93,7 +93,7 @@ func NewTCPBind(src *netip.AddrPort, origEndpoint, endpoint string, log *zap.Sug
 	}
 
 	// Create proxy-aware dialer.
-	dialer := dialers.NewTCPProxyDialer(defaultDialTimeout)
+	dialer := dialers.NewTCPProxyDialer(defaultDialTimeout, log)
 
 	b := &TCPBind{
 		endpoint:  origEndpoint,

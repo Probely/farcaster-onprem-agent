@@ -22,6 +22,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Dialer is the interface for connection dialers, partially implementing Go's net.Dialer interface.
@@ -43,35 +45,44 @@ type ProxyFunc func(addr string) (*url.URL, error)
 //
 // Example usage:
 //
-//	dialer := dialers.NewTCPProxyDialer(30 * time.Second)
+//	dialer := dialers.NewTCPProxyDialer(30 * time.Second, log)
 //	conn, err := dialer.Dial("tcp", "example.com:443")
 type TCPProxyDialer struct {
 	timeout    time.Duration
 	proxyFunc  ProxyFunc
 	proxyHosts map[string]bool
+	log        *zap.SugaredLogger
 }
 
 // NewTCPProxyDialer creates a TCP dialer that automatically handles proxy configuration
 // from environment variables.
-func NewTCPProxyDialer(timeout time.Duration) *TCPProxyDialer {
+func NewTCPProxyDialer(timeout time.Duration, log *zap.SugaredLogger) *TCPProxyDialer {
+	if log == nil {
+		log = zap.NewNop().Sugar()
+	}
 	d := &TCPProxyDialer{
 		timeout:    timeout,
 		proxyFunc:  proxyFromEnvironment,
 		proxyHosts: make(map[string]bool),
+		log:        log,
 	}
 	d.initProxyHosts()
 	return d
 }
 
 // NewTCPProxyDialerWithProxyFunc creates a TCP dialer with custom proxy resolution logic.
-func NewTCPProxyDialerWithProxyFunc(timeout time.Duration, proxyFunc ProxyFunc) *TCPProxyDialer {
+func NewTCPProxyDialerWithProxyFunc(timeout time.Duration, proxyFunc ProxyFunc, log *zap.SugaredLogger) *TCPProxyDialer {
 	if proxyFunc == nil {
 		proxyFunc = proxyFromEnvironment
+	}
+	if log == nil {
+		log = zap.NewNop().Sugar()
 	}
 	d := &TCPProxyDialer{
 		timeout:    timeout,
 		proxyFunc:  proxyFunc,
 		proxyHosts: make(map[string]bool),
+		log:        log,
 	}
 	d.initProxyHosts()
 	return d
@@ -141,6 +152,7 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 	}
 	// If no proxy is configured, use direct connection.
 	if proxyURL == nil {
+		d.log.Debugf("proxy: direct (no proxy matched) addr=%s", addr)
 		dialer := &net.Dialer{}
 		return dialer.DialContext(ctx, network, addr)
 	}
@@ -151,9 +163,12 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 	}
 	// If destination host matches a known proxy hostname or IP, bypass proxy.
 	if d.proxyHosts[strings.ToLower(targetHost)] {
+		d.log.Debugf("proxy: direct (target is proxy host) addr=%s", addr)
 		dialer := &net.Dialer{}
 		return dialer.DialContext(ctx, network, addr)
 	}
+
+	d.log.Debugf("proxy: via %s addr=%s NO_PROXY=%q", proxyURL.Redacted(), addr, os.Getenv("NO_PROXY"))
 
 	// Route through appropriate proxy type.
 	switch proxyURL.Scheme {
