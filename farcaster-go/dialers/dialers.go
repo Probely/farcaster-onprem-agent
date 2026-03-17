@@ -45,7 +45,7 @@ type ProxyFunc func(addr string) (*url.URL, error)
 //
 // Example usage:
 //
-//	dialer := dialers.NewTCPProxyDialer(30 * time.Second)
+//	dialer := dialers.NewTCPProxyDialer(30 * time.Second, log)
 //	conn, err := dialer.Dial("tcp", "example.com:443")
 type TCPProxyDialer struct {
 	timeout    time.Duration

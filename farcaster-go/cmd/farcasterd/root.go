@@ -226,7 +226,7 @@ func getToken(token string) string {
 }
 
 func hasProxyEnv() bool {
-	for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {
+	for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
 		if os.Getenv(k) != "" {
 			return true
 		}
