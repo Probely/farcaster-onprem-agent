@@ -2,7 +2,7 @@
 
 This document will guide you through the installation of the Farcaster Agent.
 
-The Farcaster Agent connects Probely to your private networks (i.e. on-premise, private cloud, CICD runner environments, etc.) using an encrypted WireGuard tunnel and proxy, allowing Probely to scan your internal applications with minimal network & security configuration changes.
+The Farcaster Agent connects Snyk API & Web to your private networks (i.e. on-premise, private cloud, CICD runner environments, etc.) using an encrypted WireGuard tunnel and proxy, allowing Snyk API & Web to scan your internal applications with minimal network & security configuration changes.
 
 The Agent is open-source, and the code is freely available on the official
 [repository](https://github.com/probely/farcaster-onprem-agent).
@@ -23,7 +23,7 @@ The Agent is open-source, and the code is freely available on the official
 # Network Architecture Overview
 The following diagram shows an example network topology for Farcaster agent based
 connectivity from a private client network (on-premise, private cloud, CI/CD, etc.) to
-the Probely Cloud infrastructure.
+the Snyk API & Web Cloud infrastructure.
 ![Farcaster high-level network architecture](./assets/img_Farcaster_Network_Overview.png)
 
   ## Architecture Notes
@@ -67,7 +67,7 @@ Notes:
 
   The Farcaster agent can be deployed as a container in Docker or Kubernetes, or as Windows or Linux service.
 
-  The agent needs a token to connect to Probely's network.
+  The agent needs a token to connect to Snyk API & Web network.
 
   > If you do not have an agent token, you can create one in the
   > [Scanning Agents](https://plus.probely.app/scanning-agents/) management area.
@@ -80,7 +80,7 @@ Notes:
   ### Kubernetes 
    We provide an example Agent Kubernetes deployment [here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
 
-   If you need help setting the Agent up on a Kubernetes cluster, please contact Probely's support team.
+   If you need help setting the Agent up on a Kubernetes cluster, please contact Snyk API & Web support team.
 
   ### Windows
   Download the latest Window binary from the releases page [here](https://github.com/Probely/farcaster-onprem-agent/releases)
@@ -115,7 +115,7 @@ Notes:
 
   * Check that the Agent connected successfully
 
-    After starting the Agent, it should link-up with Probely. Run the following command:
+    After starting the Agent, it should link-up with Snyk API & Web. Run the following command:
 ```shell
   docker logs probely-agent
 ```
@@ -194,10 +194,10 @@ Notes:
   Please refer to [network requirements](#network-requirements) for Agent connectivity requirements.
 
   ### Proxy Configuration 
-  The agent can use a proxy to connect to Probely using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
+  The agent can use a proxy to connect to Snyk API & Web using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
 
   ### Performance Issues
-While the agent can use an HTTP/S proxy or a direct TCP connection to Probely, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
+While the agent can use an HTTP/S proxy or a direct TCP connection to Snyk API & Web, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.
 
   ### UDP Connectivity testing
  To confirm if nothing is blocking the UDP connections, you can set up a UDP server using the following script **outside your network** to "echo" the received messages:
@@ -262,7 +262,7 @@ the default Probely docker Agent images are used.  Internal repositories can be 
 
 Installing third-party software on your network requires some degree of trust.
 Being security professionals ourselves, we are very aware of this and designed
-Probely following a set of security principles.
+Snyk API & Web following a set of security principles.
 
 **Transparency**
 
@@ -276,7 +276,7 @@ been tampered with.
 * The Agent is built around
 [Zero Trust Networks](https://www.oreilly.com/library/view/zero-trust-networks/9781491962183/)
 design principles. All traffic is end-to-end encrypted between agents.
-Even inside Probely's "internal" networks.
+Even inside Snyk API & Web "internal" networks.
 * The Agent has been hardened in several ways, from using memory-safe languages
 (e.g., Go and Rust) to modern, recommended cryptographic algorithms.
 * The Agent does not listen on any public Internet port, reducing its attack
