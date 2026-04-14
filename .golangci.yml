@@ -5,7 +5,3 @@ linters:
     - gosec
     - gocritic
     - errorlint
-
-issues:
-  exclude-dirs:
-    - vendor
