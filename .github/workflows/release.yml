@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      test_version:
+        description: "Test version (e.g. 0.0.0-test)"
+        required: true
+        default: "0.0.0-test"
 
 permissions:
   contents: write
@@ -13,6 +19,7 @@ permissions:
 jobs:
   verify-tag:
     name: Verify Tag
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +37,7 @@ jobs:
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}
     needs: verify-tag
+    if: always() && (needs.verify-tag.result == 'success' || needs.verify-tag.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -68,7 +76,8 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ inputs.test_version || format('{0}', github.ref_name) }}"
+          VERSION="${VERSION#v}"
           COMMIT="${GITHUB_SHA::7}"
           BINARY="farcasterd-${{ matrix.os }}-${{ matrix.arch }}-${VERSION}${{ matrix.ext }}"
           go build \
@@ -98,12 +107,24 @@ jobs:
         run: sha256sum farcasterd-* > checksums-sha256.txt
 
       - name: Attest build provenance
+        if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: artifacts/farcasterd-*
 
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: artifacts/*
+
+      - name: List artifacts (test run)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: artifacts
+        run: |
+          echo "Built artifacts:"
+          ls -lh farcasterd-*
+          echo ""
+          echo "Checksums:"
+          cat checksums-sha256.txt
