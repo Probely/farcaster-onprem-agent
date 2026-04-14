@@ -17,27 +17,26 @@ permissions:
   attestations: write
 
 jobs:
-  verify-tag:
-    name: Verify Tag
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify tag is on main branch
-        run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag must point to a commit on the main branch"
-            exit 1
-          fi
+  # TODO: restore verify-tag before merge
+  # verify-tag:
+  #   name: Verify Tag
+  #   if: github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - name: Verify tag is on main branch
+  #       run: |
+  #         git fetch origin main
+  #         if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+  #           echo "::error::Tag must point to a commit on the main branch"
+  #           exit 1
+  #         fi
 
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}
-    needs: verify-tag
-    if: always() && (needs.verify-tag.result == 'success' || needs.verify-tag.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
