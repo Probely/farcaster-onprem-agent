@@ -1,0 +1,11 @@
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - gocritic
+    - errorlint
+
+issues:
+  exclude-dirs:
+    - vendor
