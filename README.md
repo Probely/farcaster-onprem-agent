@@ -75,7 +75,7 @@ Notes:
  ## Required software
 
   ### Docker
-  Both [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) must be installed.
+  When using Docker Compose, both [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) must be installed.
 
   ### Kubernetes 
    We provide an example Agent Kubernetes deployment [here](https://github.com/probely/farcaster-onprem-agent/tree/main/contrib/kubernetes/).
