@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.24 as go_builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm as go_builder
 COPY . /build/
 ARG TARGETARCH
 ARG VERSION

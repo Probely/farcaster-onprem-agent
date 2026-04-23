@@ -367,7 +367,7 @@ func proxyTCP(src, dst net.Conn) error {
 	return err
 }
 
-func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
+func (ns *netstack) handleUDP(r *udp.ForwarderRequest) bool {
 	// Create a new UDP forwarder with a mutex to prevent races
 	var fwdMutex sync.Mutex
 	fwdMutex.Lock()
@@ -377,7 +377,7 @@ func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
 	if err != nil {
 		fwdMutex.Unlock()
 		ns.log.Debug("Failed creating UDP forwarder:", err)
-		return
+		return false
 	}
 
 	// Get the connection request.
@@ -389,13 +389,14 @@ func (ns *netstack) handleUDP(r *udp.ForwarderRequest) {
 		go func() {
 			ns.handleDNSUDP(fwd)
 		}()
-		return
+		return true
 	}
 
 	// Forward the connection.
 	go func() {
 		ns.forwardUDP(fwd)
 	}()
+	return true
 }
 
 func (ns *netstack) forwardUDP(fwd *netstackUDPFwd) {
