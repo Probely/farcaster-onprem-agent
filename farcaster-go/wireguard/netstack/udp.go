@@ -1,6 +1,7 @@
 package netstack
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -15,13 +16,17 @@ import (
 const maxUDPPacketSize = 2048
 
 // bufferPool reuses per-packet buffers to avoid per-packet allocations
-// during high-throughput UDP forwarding.
+// during high-throughput UDP forwarding. Pointers are pooled because
+// sync.Pool with non-pointer types allocates on each Put (SA6002).
 var bufferPool = sync.Pool{
-	New: func() any { return make([]byte, maxUDPPacketSize) },
+	New: func() any {
+		b := make([]byte, maxUDPPacketSize)
+		return &b
+	},
 }
 
-func getBuffer() []byte  { return bufferPool.Get().([]byte) }
-func putBuffer(b []byte) { bufferPool.Put(b) }
+func getBuffer() []byte  { return *bufferPool.Get().(*[]byte) }
+func putBuffer(b []byte) { bufferPool.Put(&b) }
 
 // idleTimer signals once after timeout elapses without an Extend call,
 // or when Stop is called.
@@ -81,7 +86,7 @@ func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
 		ns.logConnectionError(err, "Downstream UDP accept failed")
 		return
 	}
-	defer downstream.Close()
+	defer downstream.Close() //nolint:errcheck
 
 	cr := r.ID()
 	raddr := netip.AddrPortFrom(parseIPv4(cr.LocalAddress), cr.LocalPort)
@@ -90,7 +95,7 @@ func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
 		ns.logConnectionError(err, "Upstream UDP dial failed")
 		return
 	}
-	defer upstream.Close()
+	defer upstream.Close() //nolint:errcheck
 
 	ns.proxyUDP(upstream, downstream)
 }
@@ -134,8 +139,8 @@ func (ns *netstack) proxyUDP(upstream, downstream net.Conn) {
 	go ns.copyUDP(done, idle, "upstream -> downstream", downstream, upstream)
 
 	<-idle.Done()
-	upstream.Close()
-	downstream.Close()
+	_ = upstream.Close()
+	_ = downstream.Close()
 	<-done
 	<-done
 }
@@ -169,7 +174,7 @@ func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
 		ns.log.Debug("Downstream DNS UDP accept failed:", err)
 		return
 	}
-	defer downstream.Close()
+	defer downstream.Close() //nolint:errcheck
 
 	q := getBuffer()
 	defer putBuffer(q)
@@ -181,7 +186,8 @@ func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
 		}
 		n, _, err := downstream.ReadFrom(q)
 		if err != nil {
-			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+			var netErr net.Error
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
 				ns.log.Debug("Could not read DNS query:", err)
 			}
 			return

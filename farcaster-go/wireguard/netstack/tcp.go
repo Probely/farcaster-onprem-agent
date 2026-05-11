@@ -3,6 +3,7 @@ package netstack
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -58,7 +59,7 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		ns.logConnectionError(err, "Upstream dial failed")
 		return
 	}
-	defer upstream.Close()
+	defer upstream.Close() //nolint:errcheck
 
 	downstream, err := ns.acceptDownstream(r)
 	if err != nil {
@@ -66,7 +67,7 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close()
+	defer downstream.Close() //nolint:errcheck
 
 	ns.proxyTCP(upstream, downstream)
 }
@@ -80,7 +81,7 @@ func (ns *netstack) dialUpstream(ctx context.Context, addr string) (*net.TCPConn
 	}
 	tc := conn.(*net.TCPConn)
 	if err := setTCPConnTimeouts(tc, keepaliveInterval, keepaliveCount); err != nil {
-		tc.Close()
+		_ = tc.Close()
 		return nil, fmt.Errorf("set upstream keepalives: %w", err)
 	}
 	return tc, nil
@@ -179,7 +180,7 @@ func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close()
+	defer downstream.Close() //nolint:errcheck
 
 	const (
 		writeTimeout = 5 * time.Second
@@ -197,7 +198,8 @@ func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 
 		var length uint16
 		if err := binary.Read(downstream, binary.BigEndian, &length); err != nil {
-			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+			var netErr net.Error
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
 				ns.log.Debug("Could not read DNS query length:", err)
 			}
 			return
@@ -221,6 +223,11 @@ func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 			ns.log.Debug("Failed to set write deadline:", err)
 			return
 		}
+		if len(reply) > maxMessage {
+			ns.log.Debug("DNS response exceeds max message size:", len(reply))
+			return
+		}
+		//nolint:gosec // length is bounded above by maxMessage (uint16 max).
 		if err := binary.Write(downstream, binary.BigEndian, uint16(len(reply))); err != nil {
 			ns.log.Debug("Failed writing DNS response length:", err)
 			return
