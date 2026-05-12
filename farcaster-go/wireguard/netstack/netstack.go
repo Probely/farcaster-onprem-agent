@@ -95,7 +95,6 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 
 	// Enable SACK.
 	sackon := tcpip.TCPSACKEnabled(true)
-	s.SetTransportProtocolOption(tcp.ProtocolNumber, &sackon)
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &sackon); err != nil {
 		return nil, fmt.Errorf("failed to enable SACK: %s", err)
 	}

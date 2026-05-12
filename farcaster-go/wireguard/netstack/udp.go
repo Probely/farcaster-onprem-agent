@@ -121,6 +121,7 @@ func (ns *netstack) dialUpstreamUDP(srcPort uint16, raddr netip.AddrPort) (*net.
 	}
 	conn, err := dialer.Dial("udp", raddr.String())
 	if err != nil {
+		ns.log.Debugf("UDP dial with srcPort=%d failed: %v; retrying with ephemeral port", srcPort, err)
 		dialer.LocalAddr = &net.UDPAddr{Port: 0}
 		conn, err = dialer.Dial("udp", raddr.String())
 		if err != nil {
@@ -195,6 +196,10 @@ func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
 		reply, err := ns.resolver.Query(q[:n], "udp")
 		if err != nil {
 			ns.log.Debug("Could not forward DNS query:", err)
+			return
+		}
+		if err := downstream.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			ns.log.Debug("Failed to set write deadline:", err)
 			return
 		}
 		if _, err := downstream.Write(reply); err != nil {

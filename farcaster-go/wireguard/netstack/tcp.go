@@ -20,7 +20,7 @@ import (
 // halfCloser is a connection that can shut down its read and write streams
 // independently. Both *net.TCPConn and *gonet.TCPConn satisfy it.
 type halfCloser interface {
-	io.ReadWriter
+	io.ReadWriteCloser
 	CloseWrite() error
 	CloseRead() error
 }
@@ -110,7 +110,9 @@ func (ns *netstack) acceptDownstream(r *tcp.ForwarderRequest) (*gonet.TCPConn, e
 func (ns *netstack) dialAddr(ip netip.Addr, port uint16) string {
 	if ns.ipCache != nil {
 		if name, ok := ns.ipCache.Get(ip); ok && name != "" {
-			return net.JoinHostPort(name, strconv.Itoa(int(port)))
+			addr := net.JoinHostPort(name, strconv.Itoa(int(port)))
+			ns.log.Debugf("Using hostname for proxy connect: %s -> %s", netip.AddrPortFrom(ip, port), addr)
+			return addr
 		}
 	}
 	return netip.AddrPortFrom(ip, port).String()
@@ -122,9 +124,20 @@ func (ns *netstack) proxyTCP(upstream, downstream halfCloser) {
 	done := make(chan error, 2)
 	go ns.halfCopy(done, "downstream -> upstream", upstream, downstream)
 	go ns.halfCopy(done, "upstream -> downstream", downstream, upstream)
-	for range 2 {
-		if err := <-done; err != nil {
-			ns.logConnectionError(err, "TCP proxy connection closed")
+
+	for i := range 2 {
+		select {
+		case err := <-done:
+			if err != nil {
+				ns.logConnectionError(err, "TCP proxy connection closed")
+			}
+		case <-ns.ctx.Done():
+			_ = upstream.Close()
+			_ = downstream.Close()
+			for range 2 - i {
+				<-done
+			}
+			return
 		}
 	}
 }
