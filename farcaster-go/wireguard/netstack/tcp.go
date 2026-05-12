@@ -2,208 +2,252 @@ package netstack
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
-	"sync"
+	"strconv"
 	"time"
 
-	"go.uber.org/zap"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"probely.com/farcaster/dialers"
-	"probely.com/farcaster/ipnamecache"
 )
 
-// Forwarder request wrapper to abstract away the details of setting up
-// a Netstack TCP connection and proxying it to an upstream server.
-type netstackTCPFwd struct {
-	fr *tcp.ForwarderRequest
-	ep tcpip.Endpoint
-
-	wq *waiter.Queue
-	we *waiter.Entry
-
-	ctx    *context.Context
-	cancel context.CancelFunc
-
-	// Ensures Cleanup is only executed once, even if called from multiple goroutines.
-	cleanupOnce sync.Once
-
-	// Closed when Cleanup is called, used to signal shutdown to background goroutines.
-	done chan struct{}
-
-	// Triggered when the downstream (netstack) connection is closed.
-	// Used to cancel the upstream connection.
-	downstreamClosed chan struct{}
-
-	upstream   *net.TCPConn   // Connection to the upstream server.
-	downstream *gonet.TCPConn // Connection to the local netstack client.
-
-	// IP->hostname cache.
-	ipCache *ipnamecache.IPNameCache
-	// Logger.
-	log *zap.SugaredLogger
+// halfCloser is a connection that can shut down its read and write streams
+// independently. Both *net.TCPConn and *gonet.TCPConn satisfy it.
+type halfCloser interface {
+	io.ReadWriteCloser
+	CloseWrite() error
+	CloseRead() error
 }
 
-func newNetstackTCPFwd(fr *tcp.ForwarderRequest, ipc *ipnamecache.IPNameCache, log *zap.SugaredLogger) *netstackTCPFwd {
-	// Create a cancellable context for managing upstream connection lifetime.
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Set up a waiter to detect when the downstream connection is closed (HUP).
-	wq := &waiter.Queue{}
-	we, downstreamClosed := waiter.NewChannelEntry(waiter.EventHUp)
-	wq.EventRegister(&we)
-
-	return &netstackTCPFwd{
-		fr:               fr,
-		ctx:              &ctx,
-		cancel:           cancel,
-		wq:               wq,
-		we:               &we,
-		done:             make(chan struct{}),
-		downstreamClosed: downstreamClosed,
-		ipCache:          ipc,
-		log:              log,
+// handleTCP dispatches an inbound TCP request. It runs on a netstack
+// worker goroutine and must not block.
+func (ns *netstack) handleTCP(r *tcp.ForwarderRequest) {
+	if ns.ctx.Err() != nil {
+		r.Complete(true)
+		return
 	}
+	if r.ID().LocalPort == 53 {
+		go ns.handleDNSTCP(r)
+		return
+	}
+	go ns.forwardTCP(r)
 }
 
-func (r *netstackTCPFwd) Reject() {
-	// Reject the connection by sending a TCP RST.
-	r.fr.Complete(true)
-}
-
-func (r *netstackTCPFwd) Cleanup() {
-	// Ensure cleanup logic runs only once, even if called from multiple places.
-	r.cleanupOnce.Do(func() {
-		// Cancel the context to signal any in-flight operations to stop.
-		if r.cancel != nil {
-			r.cancel()
+// forwardTCP proxies one TCP connection. The upstream is dialed before
+// the netstack endpoint is created so a failed dial sends a RST instead
+// of accepting the SYN and tearing the connection down immediately.
+func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
+	// Complete must be called or the in-flight slot leaks.
+	completed := false
+	defer func() {
+		if !completed {
+			r.Complete(true)
 		}
-
-		// Unregister the waiter entry to avoid leaks.
-		if r.we != nil {
-			r.wq.EventUnregister(r.we)
-		}
-
-		// Close the done channel to notify any goroutines waiting on shutdown.
-		select {
-		case <-r.done:
-			// Already closed
-		default:
-			close(r.done)
-		}
-
-		// Close upstream and downstream connections if they exist.
-		if r.upstream != nil {
-			r.upstream.Close()
-		}
-		if r.downstream != nil {
-			r.downstream.Close()
-		}
-	})
-}
-
-func (r *netstackTCPFwd) ConnectUpstream(dialer dialers.Dialer) (*net.TCPConn, error) {
-	// Start a background goroutine that cancels the upstream connection if
-	// the downstream connection closes or if Cleanup is triggered.
-	go func() {
-		select {
-		case <-r.downstreamClosed:
-		case <-r.done:
-		}
-		// Ensure all resources are released.
-		r.Cleanup()
 	}()
 
-	cr := r.fr.ID()
+	cr := r.ID()
+	addr := ns.dialAddr(parseIPv4(cr.LocalAddress), cr.LocalPort)
 
-	// TODO: Add IPv6 support.
-	serverIP := parseIPv4(cr.LocalAddress)
-	serverPort := cr.LocalPort
-	serverAddrPort := netip.AddrPortFrom(serverIP, serverPort)
-	serverAddr := serverAddrPort.String()
-
-	// If enabled and cache has a hostname for this IP, switch to hostname:port
-	// before proxy decision so that NO_PROXY applies to the hostname naturally.
-	dialAddr := serverAddr
-	if r.ipCache != nil {
-		if name, ok := r.ipCache.Get(serverIP); ok && name != "" {
-			dialAddr = net.JoinHostPort(name, fmt.Sprintf("%d", serverPort))
-			r.log.Debugf("Using hostname for proxy connect: %s -> %s", serverAddr, dialAddr)
-		}
-	}
-
-	// Proxy-aware TCP dialer.
-	server, err := dialer.Dial("tcp", dialAddr)
-
+	upstream, err := ns.dialUpstream(ns.ctx, addr)
 	if err != nil {
-		// Reject the connection if attempt fails.
-		r.fr.Complete(true)
+		ns.logConnectionError(err, "Upstream dial failed")
+		return
+	}
+	defer upstream.Close() //nolint:errcheck
+
+	downstream, err := ns.acceptDownstream(r)
+	if err != nil {
+		ns.logConnectionError(err, "Downstream accept failed")
+		return
+	}
+	completed = true
+	defer downstream.Close() //nolint:errcheck
+
+	ns.proxyTCP(upstream, downstream)
+}
+
+// dialUpstream dials the real server with the proxy-aware dialer and
+// applies TCP keepalives.
+func (ns *netstack) dialUpstream(ctx context.Context, addr string) (*net.TCPConn, error) {
+	conn, err := ns.dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
 		return nil, err
 	}
-
-	// Set TCP keepalive options for the upstream connection.
-	tcpConn := server.(*net.TCPConn)
-	setTCPConnTimeouts(tcpConn, keepaliveInterval, keepaliveCount)
-
-	r.upstream = tcpConn
-	return r.upstream, nil
+	tc := conn.(*net.TCPConn)
+	if err := setTCPConnTimeouts(tc, keepaliveInterval, keepaliveCount); err != nil {
+		_ = tc.Close()
+		return nil, fmt.Errorf("set upstream keepalives: %w", err)
+	}
+	return tc, nil
 }
 
-func (r *netstackTCPFwd) ConnectDownstream(timeout time.Duration, count int) (*gonet.TCPConn, error) {
-	var err tcpip.Error
-
-	r.ep, err = r.fr.CreateEndpoint(r.wq)
-	if err != nil {
-		r.fr.Complete(true) // Send RST.
-		return nil, fmt.Errorf("could not create endpoint: %v", err)
+// acceptDownstream completes the SYN handshake and returns the netstack-side
+// connection. On error, the caller must Complete(true) to send a RST.
+func (ns *netstack) acceptDownstream(r *tcp.ForwarderRequest) (*gonet.TCPConn, error) {
+	wq := &waiter.Queue{}
+	ep, tcpErr := r.CreateEndpoint(wq)
+	if tcpErr != nil {
+		return nil, fmt.Errorf("create endpoint: %v", tcpErr)
 	}
-
-	if err = r.setTimeouts(timeout, count); err != nil {
-		r.fr.Complete(true) // Send RST.
-		return nil, fmt.Errorf("could not set timeouts: %v", err)
+	if err := setEndpointKeepalives(ep, keepaliveInterval, keepaliveCount); err != nil {
+		ep.Close()
+		return nil, err
 	}
-
-	r.fr.Complete(false)
-	r.ep.SocketOptions().SetDelayOption(true)
-	r.downstream = gonet.NewTCPConn(r.wq, r.ep)
-
-	return r.downstream, nil
+	r.Complete(false)
+	ep.SocketOptions().SetDelayOption(true)
+	return gonet.NewTCPConn(wq, ep), nil
 }
 
-func (r *netstackTCPFwd) setTimeouts(interval time.Duration, count int) tcpip.Error {
-	// Enable keepalives.
-	r.ep.SocketOptions().SetKeepAlive(true)
-
-	// TCP_KEEPIDLE
-	keepIdle := tcpip.KeepaliveIdleOption(interval)
-	// TCP_KEEPINTVL
-	keepIntvl := tcpip.KeepaliveIntervalOption(interval)
-	// TCP_USER_TIMEOUT
-	timeout := tcpUserTimeout(interval, count)
-	userTimeout := tcpip.TCPUserTimeoutOption(timeout)
-
-	// Set all the options.
-	for _, opt := range []tcpip.SettableSocketOption{&keepIdle, &keepIntvl, &userTimeout} {
-		if err := r.ep.SetSockOpt(opt); err != nil {
-			return err
+// dialAddr returns the address to dial for a destination, swapping the IP
+// for a cached hostname when one is known. Hostnames let NO_PROXY rules
+// match by name and keep CONNECT proxies that reject literal IPs working.
+func (ns *netstack) dialAddr(ip netip.Addr, port uint16) string {
+	if ns.ipCache != nil {
+		if name, ok := ns.ipCache.Get(ip); ok && name != "" {
+			addr := net.JoinHostPort(name, strconv.Itoa(int(port)))
+			ns.log.Debugf("Using hostname for proxy connect: %s -> %s", netip.AddrPortFrom(ip, port), addr)
+			return addr
 		}
 	}
+	return netip.AddrPortFrom(ip, port).String()
+}
 
-	// TCP_KEEPCNT
-	if err := r.ep.SetSockOptInt(tcpip.KeepaliveCountOption, count); err != nil {
-		return err
+// proxyTCP copies bytes in both directions, half-closing each side as
+// its source returns EOF.
+func (ns *netstack) proxyTCP(upstream, downstream halfCloser) {
+	done := make(chan error, 2)
+	go ns.halfCopy(done, "downstream -> upstream", upstream, downstream)
+	go ns.halfCopy(done, "upstream -> downstream", downstream, upstream)
+
+	for i := range 2 {
+		select {
+		case err := <-done:
+			if err != nil {
+				ns.logConnectionError(err, "TCP proxy connection closed")
+			}
+		case <-ns.ctx.Done():
+			_ = upstream.Close()
+			_ = downstream.Close()
+			for range 2 - i {
+				<-done
+			}
+			return
+		}
 	}
+}
 
+func (ns *netstack) halfCopy(done chan<- error, dir string, dst, src halfCloser) {
+	_, err := io.Copy(dst, src)
+	_ = dst.CloseWrite()
+	_ = src.CloseRead()
+	if err != nil {
+		err = fmt.Errorf("%s: %w", dir, err)
+	}
+	done <- err
+}
+
+// setEndpointKeepalives enables TCP keepalives on a netstack endpoint.
+func setEndpointKeepalives(ep tcpip.Endpoint, interval time.Duration, count int) error {
+	ep.SocketOptions().SetKeepAlive(true)
+	keepIdle := tcpip.KeepaliveIdleOption(interval)
+	keepIntvl := tcpip.KeepaliveIntervalOption(interval)
+	userTimeout := tcpip.TCPUserTimeoutOption(tcpUserTimeout(interval, count))
+	for _, opt := range []tcpip.SettableSocketOption{&keepIdle, &keepIntvl, &userTimeout} {
+		if err := ep.SetSockOpt(opt); err != nil {
+			return fmt.Errorf("set keepalive option: %v", err)
+		}
+	}
+	if err := ep.SetSockOptInt(tcpip.KeepaliveCountOption, count); err != nil {
+		return fmt.Errorf("set keepalive count: %v", err)
+	}
 	return nil
 }
 
-// tcpUserTimeout returns the TCP_USER_TIMEOUT value that should be
-// used for a connection with the given keepalive interval and count.
-// https://blog.cloudflare.com/when-tcp-sockets-refuse-to-die/
+// tcpUserTimeout returns the TCP_USER_TIMEOUT for a connection with the given
+// keepalive interval and probe count.
+//
+// See https://blog.cloudflare.com/when-tcp-sockets-refuse-to-die/.
 func tcpUserTimeout(interval time.Duration, count int) time.Duration {
 	return interval + (interval * time.Duration(count)) - 1
+}
+
+// handleDNSTCP serves DNS queries over a TCP connection by forwarding them to
+// the local resolver instead of dialing an upstream server.
+func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
+	completed := false
+	defer func() {
+		if !completed {
+			r.Complete(true)
+		}
+	}()
+
+	downstream, err := ns.acceptDownstream(r)
+	if err != nil {
+		ns.log.Debug("Downstream DNS TCP connection failed:", err)
+		return
+	}
+	completed = true
+	defer downstream.Close() //nolint:errcheck
+
+	const (
+		writeTimeout = 5 * time.Second
+		maxMessage   = 65535
+	)
+	q := make([]byte, maxMessage)
+
+	for {
+		// RFC 7766 §4: one deadline covers length and body to mitigate
+		// slow-read attacks.
+		if err := downstream.SetReadDeadline(time.Now().Add(dnsIdleTimeout)); err != nil {
+			ns.log.Debug("Failed to set read deadline:", err)
+			return
+		}
+
+		var length uint16
+		if err := binary.Read(downstream, binary.BigEndian, &length); err != nil {
+			var netErr net.Error
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
+				ns.log.Debug("Could not read DNS query length:", err)
+			}
+			return
+		}
+		if length == 0 || int(length) > maxMessage {
+			ns.log.Debug("Invalid DNS query length:", length)
+			return
+		}
+		if _, err := io.ReadFull(downstream, q[:length]); err != nil {
+			ns.log.Debug("Could not read DNS query:", err)
+			return
+		}
+
+		reply, err := ns.resolver.Query(q[:length], "tcp")
+		if err != nil {
+			ns.log.Debug("Could not forward DNS query:", err)
+			return
+		}
+
+		if err := downstream.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			ns.log.Debug("Failed to set write deadline:", err)
+			return
+		}
+		if len(reply) > maxMessage {
+			ns.log.Debug("DNS response exceeds max message size:", len(reply))
+			return
+		}
+		//nolint:gosec // length is bounded above by maxMessage (uint16 max).
+		if err := binary.Write(downstream, binary.BigEndian, uint16(len(reply))); err != nil {
+			ns.log.Debug("Failed writing DNS response length:", err)
+			return
+		}
+		if _, err := downstream.Write(reply); err != nil {
+			ns.log.Debug("Failed writing DNS response:", err)
+			return
+		}
+	}
 }

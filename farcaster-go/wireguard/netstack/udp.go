@@ -1,251 +1,210 @@
 package netstack
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/netip"
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const maxUDPPacketSize = 2048
 
-// bufferPool is a pool of byte slices used for UDP packet handling
-// to reduce allocations and GC pressure during high-throughput forwarding.
-// This helps avoid per-packet allocations in high-throughput scenarios.
+// bufferPool reuses per-packet buffers to avoid per-packet allocations
+// during high-throughput UDP forwarding. Pointers are pooled because
+// sync.Pool with non-pointer types allocates on each Put (SA6002).
 var bufferPool = sync.Pool{
 	New: func() any {
-		return make([]byte, maxUDPPacketSize)
+		b := make([]byte, maxUDPPacketSize)
+		return &b
 	},
 }
 
-// getBuffer gets a buffer from the pool
-func getBuffer() []byte {
-	return bufferPool.Get().([]byte)
+func getBuffer() []byte  { return *bufferPool.Get().(*[]byte) }
+func putBuffer(b []byte) { bufferPool.Put(&b) }
+
+// idleTimer signals once after timeout elapses without an Extend call,
+// or when Stop is called.
+type idleTimer struct {
+	timeout time.Duration
+	mu      sync.Mutex
+	timer   *time.Timer
+	done    chan struct{}
+	once    sync.Once
 }
 
-// putBuffer returns a buffer to the pool
-func putBuffer(buf []byte) {
-	bufferPool.Put(buf)
-}
-
-type keepaliveTimer struct {
-	// Configuration/Context related
-	kaTimeout time.Duration
-	ID        int64
-	ctx       context.Context
-	cancel    context.CancelFunc
-
-	// Synchronization and protected state
-	mu      sync.Mutex // Mutex to protect timer operations (kaTimer)
-	kaTimer *time.Timer
-}
-
-func newKeepaliveTimer(kaTimeout time.Duration, logger *zap.SugaredLogger) *keepaliveTimer {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	k := &keepaliveTimer{
-		ctx:       ctx,
-		cancel:    cancel,
-		kaTimeout: kaTimeout,
-		ID:        rand.Int63n(4611686018427387904),
-		mu:        sync.Mutex{},
+func newIdleTimer(timeout time.Duration) *idleTimer {
+	t := &idleTimer{
+		timeout: timeout,
+		done:    make(chan struct{}),
 	}
-
-	// Create the timer within a mutex lock to prevent race conditions
-	k.mu.Lock()
-	k.kaTimer = time.AfterFunc(kaTimeout, func() {
-		logger.Debugf("UDP connection timed out: %d", k.ID)
-		k.Stop() // Use Stop method to prevent deadlocks
-	})
-	k.mu.Unlock()
-
-	return k
+	t.timer = time.AfterFunc(timeout, t.fire)
+	return t
 }
 
-func (k *keepaliveTimer) Extend() {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.kaTimer != nil {
-		k.kaTimer.Reset(k.kaTimeout)
+func (t *idleTimer) Extend() {
+	t.mu.Lock()
+	t.timer.Reset(t.timeout)
+	t.mu.Unlock()
+}
+
+func (t *idleTimer) Stop() {
+	t.mu.Lock()
+	t.timer.Stop()
+	t.mu.Unlock()
+	t.fire()
+}
+
+func (t *idleTimer) Done() <-chan struct{} { return t.done }
+
+func (t *idleTimer) fire() { t.once.Do(func() { close(t.done) }) }
+
+// handleUDP dispatches an inbound UDP forwarder request. Returning false
+// causes the netstack forwarder to drop the packet.
+func (ns *netstack) handleUDP(r *udp.ForwarderRequest) bool {
+	if ns.ctx.Err() != nil {
+		return false
 	}
-}
-
-func (k *keepaliveTimer) Stop() {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.kaTimer != nil {
-		k.kaTimer.Stop()
+	if r.ID().LocalPort == 53 {
+		go ns.handleDNSUDP(r)
+		return true
 	}
-	// Cancel the context outside the lock to avoid potential deadlocks
-	// when handling context callbacks
-	go k.cancel()
+	go ns.forwardUDP(r)
+	return true
 }
 
-func (k *keepaliveTimer) Stopped() <-chan struct{} {
-	return k.ctx.Done()
-}
-
-type netstackUDPFwd struct {
-	s  *stack.Stack
-	fr *udp.ForwarderRequest
-	ep tcpip.Endpoint
-
-	wq *waiter.Queue
-
-	upstream   *net.UDPConn
-	downstream *gonet.UDPConn
-
-	keepalive *keepaliveTimer
-
-	log *zap.SugaredLogger
-}
-
-func newNetstackUDPFwd(
-	s *stack.Stack,
-	fr *udp.ForwarderRequest,
-	kaTimeout time.Duration,
-	log *zap.SugaredLogger) (*netstackUDPFwd, error) {
-	// Try to create the UDP endpoint ASAP to minimize race conditions caused
-	// by the downstream sending multiple packets in quick succession.
-	wq := &waiter.Queue{}
-	ep, err := fr.CreateEndpoint(wq)
+// forwardUDP proxies a single UDP "session" between a downstream netstack
+// peer and an upstream server.
+func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
+	downstream, err := ns.acceptUDP(r)
 	if err != nil {
-		return nil, fmt.Errorf("UDP create endpoint: %s", err)
+		ns.logConnectionError(err, "Downstream UDP accept failed")
+		return
 	}
+	defer downstream.Close() //nolint:errcheck
 
-	f := &netstackUDPFwd{
-		s:         s,
-		fr:        fr,
-		wq:        wq,
-		ep:        ep,
-		log:       log,
-		keepalive: newKeepaliveTimer(kaTimeout, log),
+	cr := r.ID()
+	raddr := netip.AddrPortFrom(parseIPv4(cr.LocalAddress), cr.LocalPort)
+	upstream, err := ns.dialUpstreamUDP(cr.RemotePort, raddr)
+	if err != nil {
+		ns.logConnectionError(err, "Upstream UDP dial failed")
+		return
 	}
+	defer upstream.Close() //nolint:errcheck
 
-	return f, nil
+	ns.proxyUDP(upstream, downstream)
 }
 
-func (f *netstackUDPFwd) KeepAlive() *keepaliveTimer {
-	return f.keepalive
+// acceptUDP creates the netstack-side UDP endpoint and wraps it as a
+// stdlib net.Conn.
+func (ns *netstack) acceptUDP(r *udp.ForwarderRequest) (*gonet.UDPConn, error) {
+	wq := &waiter.Queue{}
+	ep, err := r.CreateEndpoint(wq)
+	if err != nil {
+		return nil, fmt.Errorf("create UDP endpoint: %v", err)
+	}
+	return gonet.NewUDPConn(wq, ep), nil
 }
 
-// Close all connections and endpoints.
-func (f *netstackUDPFwd) Cleanup() {
-	if f.upstream != nil {
-		f.upstream.Close()
-	}
-	if f.downstream != nil {
-		f.downstream.Close()
-	}
-	if f.ep != nil {
-		f.ep.Close()
-	}
-
-	f.keepalive.Stop()
-}
-
-// The upstream peer is the destination of the first arriving UDP packet.
-func (f *netstackUDPFwd) ConnectUpstream() (*net.UDPConn, error) {
-	cr := f.fr.ID()
-
-	// Set a connection timeout
+// dialUpstreamUDP dials raddr, preserving srcPort when possible
+// (STUN/QUIC depend on it) and falling back to an ephemeral port if
+// it is already bound.
+func (ns *netstack) dialUpstreamUDP(srcPort uint16, raddr netip.AddrPort) (*net.UDPConn, error) {
 	dialer := net.Dialer{
 		Timeout:   defaultConnTimeout,
-		LocalAddr: &net.UDPAddr{Port: int(cr.RemotePort)},
+		LocalAddr: &net.UDPAddr{Port: int(srcPort)},
 	}
-
-	dstIP := parseIPv4(cr.LocalAddress)
-	dstAddr := netip.AddrPortFrom(dstIP, cr.LocalPort)
-	raddr := net.UDPAddrFromAddrPort(dstAddr)
-
-	var err error
 	conn, err := dialer.Dial("udp", raddr.String())
 	if err != nil {
-		f.log.Debugf("Error connecting to %s: %s. Retrying...", raddr, err)
-		// Try with port 0 (system-assigned port)
+		ns.log.Debugf("UDP dial with srcPort=%d failed: %v; retrying with ephemeral port", srcPort, err)
 		dialer.LocalAddr = &net.UDPAddr{Port: 0}
 		conn, err = dialer.Dial("udp", raddr.String())
 		if err != nil {
-			f.log.Debugf("Error connecting to %s: %s. Failed.", raddr, err)
-			return nil, fmt.Errorf("connect to %s: %s", raddr, err)
+			return nil, err
 		}
 	}
-
-	f.upstream = conn.(*net.UDPConn)
-
-	// Set idle timeouts
-	f.upstream.SetReadDeadline(time.Now().Add(f.keepalive.kaTimeout))
-
-	return f.upstream, nil
+	return conn.(*net.UDPConn), nil
 }
 
-// The downstream peer is the source of the first arriving UDP packet.
-func (f *netstackUDPFwd) ConnectDownstream() (*gonet.UDPConn, error) {
-	f.downstream = gonet.NewUDPConn(f.wq, f.ep)
+// proxyUDP forwards packets in both directions until either side errors
+// or the session is idle for keepaliveInterval.
+func (ns *netstack) proxyUDP(upstream, downstream net.Conn) {
+	idle := newIdleTimer(keepaliveInterval)
+	done := make(chan struct{}, 2)
+	go ns.copyUDP(done, idle, "downstream -> upstream", upstream, downstream)
+	go ns.copyUDP(done, idle, "upstream -> downstream", downstream, upstream)
 
-	// Set initial deadline which will be extended by the proxy
-	f.downstream.SetReadDeadline(time.Now().Add(f.keepalive.kaTimeout))
-
-	return f.downstream, nil
+	<-idle.Done()
+	_ = upstream.Close()
+	_ = downstream.Close()
+	<-done
+	<-done
 }
 
-// proxyUDP forwards UDP packets between src and dst.
-// It uses read/write deadlines and a keepalive timer to detect idle or dead connections.
-// If either side closes or times out, the function exits and signals via the teardown channel.
-func proxyUDP(src, dst net.Conn, teardown chan error, keepalive *keepaliveTimer) {
-	var err error
-	var n int
+func (ns *netstack) copyUDP(done chan<- struct{}, idle *idleTimer, dir string, dst, src net.Conn) {
+	defer func() { done <- struct{}{} }()
+	defer idle.Stop()
 
 	buf := getBuffer()
 	defer putBuffer(buf)
 
 	for {
-		select {
-		case <-keepalive.Stopped():
-			teardown <- nil
+		n, err := src.Read(buf)
+		if err != nil {
+			ns.logConnectionError(err, dir)
 			return
-		default:
-			// Set a read deadline to avoid indefinite blocking.
-			if err = src.SetReadDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
-				teardown <- fmt.Errorf("failed to set read deadline: %w", err)
-				return
-			}
-
-			n, err = src.Read(buf)
-
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// Timeout is expected; continue to check keepalive.
-				continue
-			}
-
-			if err != nil {
-				teardown <- err
-				return
-			}
-
-			if err = dst.SetWriteDeadline(time.Now().Add(defaultReadTimeout)); err != nil {
-				teardown <- fmt.Errorf("failed to set write deadline: %w", err)
-				return
-			}
-
-			_, err = dst.Write(buf[:n])
-			if err != nil {
-				teardown <- err
-				return
-			}
 		}
+		if _, err := dst.Write(buf[:n]); err != nil {
+			ns.logConnectionError(err, dir)
+			return
+		}
+		idle.Extend()
+	}
+}
 
-		// Reset the keepalive timer after successful activity.
-		keepalive.Extend()
+// handleDNSUDP serves DNS queries over a UDP "session" by forwarding
+// them to the local resolver instead of dialing an upstream server.
+func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
+	downstream, err := ns.acceptUDP(r)
+	if err != nil {
+		ns.log.Debug("Downstream DNS UDP accept failed:", err)
+		return
+	}
+	defer downstream.Close() //nolint:errcheck
+
+	q := getBuffer()
+	defer putBuffer(q)
+
+	for {
+		if err := downstream.SetReadDeadline(time.Now().Add(dnsIdleTimeout)); err != nil {
+			ns.log.Debug("Failed to set read deadline:", err)
+			return
+		}
+		n, _, err := downstream.ReadFrom(q)
+		if err != nil {
+			var netErr net.Error
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
+				ns.log.Debug("Could not read DNS query:", err)
+			}
+			return
+		}
+		reply, err := ns.resolver.Query(q[:n], "udp")
+		if err != nil {
+			ns.log.Debug("Could not forward DNS query:", err)
+			return
+		}
+		if err := downstream.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			ns.log.Debug("Failed to set write deadline:", err)
+			return
+		}
+		if _, err := downstream.Write(reply); err != nil {
+			ns.log.Debug("Could not write DNS response:", err)
+			return
+		}
 	}
 }
