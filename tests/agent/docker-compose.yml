@@ -76,22 +76,6 @@ services:
     restart: always
     stop_grace_period: 1s
 
-  tcp_proxy:
-    image: ubuntu:noble
-    volumes:
-      - shared-logs:/logs
-    command:
-    - /bin/bash
-    - -c
-    - rm -rf /logs/moproxy
-      && mkdir /logs/moproxy
-      && chmod 1777 /logs/moproxy
-      && while true; do
-          test -f /logs/moproxy/moproxy.log && tail -F /logs/moproxy/moproxy.log || sleep 1;
-        done
-    restart: always
-    stop_grace_period: 1s
-
       #tcpdump:
       #  image: alpine
       #  healthcheck:

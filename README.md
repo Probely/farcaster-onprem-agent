@@ -123,15 +123,16 @@ Notes:
   If everything is running correctly, you should see output similar to:
 
 ```
-    Downloading agent configuration ... done
-    Deploying agent configuration   ... done
-    Starting local DNS resolver     ... done
-    Setting HTTP proxy rules        ... done
-    Connecting to Probely (via UDP) ... done
-    Setting local gateway rules     ... done
-    Starting WireGuard gateway      ... done
-
-    Running...
+    2025-01-15T10:30:00Z	INFO	Starting Farcaster agent v1.0.0
+    2025-01-15T10:30:00Z	INFO	Determined run mode: kernel
+    2025-01-15T10:30:01Z	INFO	Fetching agent configuration
+    2025-01-15T10:30:02Z	INFO	Agent configuration deployed
+    2025-01-15T10:30:03Z	INFO	UDP connection established
+    2025-01-15T10:30:03Z	INFO	Gateway filter rules configured
+    2025-01-15T10:30:03Z	INFO	Gateway NAT rules configured
+    2025-01-15T10:30:04Z	INFO	WireGuard gateway started
+    2025-01-15T10:30:04Z	INFO	DNS forwarder started
+    2025-01-15T10:30:04Z	INFO	Agent running
 ```
 
   Once up and running, traffic destined for any targets configured to use the agent is routed through the vpn tunnel and proxied by the agent to connect to those targets on your private network. 
@@ -278,7 +279,7 @@ been tampered with.
 design principles. All traffic is end-to-end encrypted between agents.
 Even inside Snyk API & Web "internal" networks.
 * The Agent has been hardened in several ways, from using memory-safe languages
-(e.g., Go and Rust) to modern, recommended cryptographic algorithms.
+(e.g., Go) to modern, recommended cryptographic algorithms.
 * The Agent does not listen on any public Internet port, reducing its attack
 surface.
 

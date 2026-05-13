@@ -360,19 +360,18 @@ resolverLoop:
 				return result.resp, nil
 			}
 
-			// Otherwise, capture the error and possibly store the non-success resp.
 			if result.err != nil {
 				r.log.Warnf("Received error from resolver %s: %v", result.resolver, result.err)
 				mu.Lock()
 				errs = append(errs, result.err)
 				mu.Unlock()
-				if result.resp != nil {
-					// Track NXDOMAIN separately
-					if result.resp.Rcode == dns.RcodeNameError && nxdomainResp == nil {
-						nxdomainResp = result.resp
-					}
-					lastResp = result.resp
+			}
+
+			if result.resp != nil {
+				if result.resp.Rcode == dns.RcodeNameError && nxdomainResp == nil {
+					nxdomainResp = result.resp
 				}
+				lastResp = result.resp
 			}
 
 		case <-ctx.Done():

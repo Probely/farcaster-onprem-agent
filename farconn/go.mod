@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/fatih/color v1.19.0
+	github.com/miekg/dns v1.1.72
 	github.com/mr-tron/base58 v1.3.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.51.0
@@ -19,8 +20,10 @@ require (
 	github.com/mdlayher/netlink v1.11.1 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/tools v0.40.0 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb // indirect
 )
