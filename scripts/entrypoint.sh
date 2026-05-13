@@ -3,7 +3,6 @@
 set -euo pipefail
 
 WORKDIR=/run/farcaster
-LOGDIR=/logs
 WG_DEFAULT_PORT=51820
 SECRETS_DIR_V2="/secrets/farcaster/data_v2"
 SECRETS_DIR_V0="/secrets/farcaster/data"
@@ -23,6 +22,16 @@ log_warn() {
 
 log_error() {
 	printf "%s\tERROR\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+run_cmd() {
+	local msg="$1"
+	shift
+	local output
+	if ! output=$("$@" 2>&1); then
+		log_error "${msg}: ${output//$'\n'/\\n}"
+		return 1
+	fi
 }
 
 check_iptables() {
@@ -52,18 +61,22 @@ wg_setup_iface() {
 wg_start() {
 	iface="$1"
 	conf="${FARCASTER_PATH}/etc/${iface}.conf"
-	test -e "${conf}" || { echo "Could not find config ${conf}"; return 1; }
+	test -e "${conf}" || { log_error "Could not find config ${conf}"; return 1; }
 
 	if ! wg_setup_iface "${iface}"; then
 		return 1
 	fi
 
-	WG_SUDO=1 \
-	WG_THREADS=2 \
-	WG_LOG_LEVEL=info \
-	WG_LOG_FILE=/dev/stdout \
-	WG_ERR_LOG_FILE=/dev/stderr \
-	/bin/sh -c "wg-quick down ${conf} 2>/dev/null || true; wg-quick up ${conf}"
+	local output
+	if ! output=$(WG_SUDO=1 \
+		WG_THREADS=2 \
+		WG_LOG_LEVEL=info \
+		WG_LOG_FILE=/dev/stdout \
+		WG_ERR_LOG_FILE=/dev/stderr \
+		/bin/sh -c "wg-quick down ${conf} 2>/dev/null || true; wg-quick up ${conf}" 2>&1); then
+		log_error "wg-quick ${iface}: ${output//$'\n'/\\n}"
+		return 1
+	fi
 }
 
 wg_get_latest_handshake() {
@@ -73,11 +86,11 @@ wg_get_latest_handshake() {
 	interval=5
 	attempts=$((timeout / interval))
 	for attempt in $(seq 1 ${attempts}); do
-		log_info "Waiting for UDP connection (${attempt}/${attempts})"
+		log_info "WireGuard: waiting for UDP connection (${attempt}/${attempts})"
 		for _ in $(seq 1 ${interval}); do
 			handshake=$(wg show "${iface}" latest-handshakes | awk -F' ' '{print $2}')
 			if [ "${handshake}" != "0" ]; then
-				log_info "UDP connection established"
+				log_info "WireGuard: UDP connection established"
 				return 0
 			fi
 			sleep 1
@@ -136,7 +149,7 @@ start_dns_forwarder() {
 	fi
 
 	setpriv --reuid=nobody --regid=nogroup --clear-groups --no-new-privs \
-		farconn dns-forward --listen "${gw_addr}:${lport}" --upstream "${upstreams}" --no-ipv6 &
+		farconn dns-forward --listen "${gw_addr}:${lport}" --upstream "${upstreams}" --no-ipv6 >/dev/null 2>&1 &
 	DNS_PID=$!
 	sleep 1
 	if ! kill -0 ${DNS_PID} 2>/dev/null; then
@@ -177,66 +190,6 @@ set_gw_nat_rules() {
 	${IPT_CMD} -t nat -A FARCASTER-NAT -o "${WG_GW_IF}" -j RETURN
 	${IPT_CMD} -t nat -A FARCASTER-NAT -j MASQUERADE
 	${IPT_CMD} -t nat -A POSTROUTING -j FARCASTER-NAT
-}
-
-escape_glob_literal() {
-	local s="$1" out="" char
-	for (( i=0; i<${#s}; i++ )); do
-		char="${s:i:1}"
-		case "$char" in
-			\\|\*|\?|\[|\]|\!|\@|\(|\)|\{|\}|\+|\?|\|) out+="\\$char" ;;
-			*) out+="$char" ;;
-		esac
-	done
-	printf '%s' "$out"
-}
-
-scrub_secrets() {
-	local result="$1"
-	shift
-
-	for secret in "$@"; do
-		[[ -z "$secret" ]] && continue
-		local pat
-		pat=$(escape_glob_literal "$secret")
-		result="${result//${pat}/***}"
-	done
-
-	printf '%s\n' "$result"
-}
-
-dump_log() {
-	set +e
-	echo
-	echo
-	echo
-
-	log_file="${1}"
-	if ! [[ "${log_file}" =~ ^/dev/|^/proc/ ]]; then
-		local content
-		local scrubbed
-		content=$(cat "${log_file}" 2>/dev/null)
-		rm -f "${log_file}"
-		scrubbed=$(scrub_secrets "${content}" \
-			"${FARCASTER_AGENT_TOKEN:-}" \
-			"${HTTP_PROXY:-}" \
-			"${HTTPS_PROXY:-}" \
-			"${SOCKS5_PROXY:-}")
-		echo "${scrubbed}"
-	fi
-
-	echo
-	echo "===================================================================="
-	echo
-	echo
-	echo "Could not start the agent. Please contact support@probely.com and"
-	echo "attach this log to your message. "
-	echo
-	echo
-	echo "===================================================================="
-	echo
-
-	sleep 120
 }
 
 print_diagnostics() {
@@ -283,28 +236,16 @@ start_userspace_agent() {
 
 download_and_deploy_config() {
 	log_info "Fetching agent configuration"
-	if ! farconn config-agent "${WORK_DIR}/"; then
-		log_error "Could not deploy agent configuration"
+	if ! run_cmd "config-agent" farconn config-agent "${WORK_DIR}/"; then
 		return 1
 	fi
 	log_info "Agent configuration deployed"
-	return 0
 }
 
 start_kernel_mode() {
-	# Save original stderr for user-visible output, redirect stderr for debug tracing
-	exec 3>&2
-	if ! mkdir -pm 0700 "$(dirname "${LOG_FILE}")"; then
-		log_warn "Could not create log directory, using stderr"
-		LOG_FILE="/dev/stderr"
-	fi
-	exec 2>>"${LOG_FILE}"
-	set -x
-
 	log_info "Starting in kernel mode"
 
-	if ! mkdir -pm 0700 "${WORK_DIR}"; then
-		log_error "Could not create work directory ${WORK_DIR}"
+	if ! run_cmd "create work directory ${WORK_DIR}" mkdir -pm 0700 "${WORK_DIR}"; then
 		return 1
 	fi
 
@@ -335,13 +276,11 @@ start_kernel_mode() {
 
 	if [ ! -f "${WORK_DIR}/wg-tunnel.conf" ] || [ ! -f "${WORK_DIR}/wg-gateway.conf" ]; then
 		log_error "Could not find configuration files"
-		dump_log "${LOG_FILE}"
 		return 1
 	fi
 
 	if ! wg_get_endpoint "${WG_TUN_IF}" >/dev/null; then
 		log_error "Could not find hub host"
-		dump_log "${LOG_FILE}"
 		return 1
 	fi
 
@@ -365,9 +304,7 @@ start_kernel_mode() {
 	if [ "${DISABLE_FIREWALL}" != "true" ] &&
 	   [ "${DISABLE_FIREWALL}" != "yes" ] &&
 	   [ "${DISABLE_FIREWALL}" != "1" ]; then
-		if ! set_gw_filter_rules; then
-			log_error "Could not set gateway filter rules"
-			dump_log "${LOG_FILE}"
+		if ! run_cmd "set gateway filter rules" set_gw_filter_rules; then
 			return 1
 		fi
 		log_info "Gateway filter rules configured"
@@ -375,30 +312,24 @@ start_kernel_mode() {
 		log_info "Gateway firewall disabled, skipping filter rules"
 	fi
 
-	if ! set_gw_nat_rules; then
-		log_error "Could not set gateway NAT rules"
-		dump_log "${LOG_FILE}"
+	if ! run_cmd "set gateway NAT rules" set_gw_nat_rules; then
 		return 1
 	fi
 	log_info "Gateway NAT rules configured"
 
 	if ! wg_start "${WG_GW_IF}"; then
-		log_error "Could not start WireGuard gateway"
-		dump_log "${LOG_FILE}"
 		return 1
 	fi
 	log_info "WireGuard gateway started"
 
 	if ! start_dns_forwarder; then
 		log_error "Could not start DNS forwarder"
-		dump_log "${LOG_FILE}"
 		return 1
 	fi
 	log_info "DNS forwarder started"
 
 	log_info "Agent running"
 
-	set +x
 	while true; do
 		now=$(date +%s)
 		tunnel_handshake=$(wg show "${WG_TUN_IF}" latest-handshakes | awk -F' ' '{print $2}')
@@ -471,7 +402,6 @@ init_environment() {
 	export LC_ALL=C
 	export FARCASTER_PATH=/farcaster
 	export PATH="${FARCASTER_PATH}/sbin:${FARCASTER_PATH}/bin:${PATH}"
-	export LOG_FILE="/run/log/farcaster.log"
 	export WORK_DIR="${WORKDIR}"
 	export WG_TUN_IF="wg-tunnel"
 	export WG_GW_IF="wg-gateway"
@@ -513,9 +443,7 @@ else
 	set +e
 	start_kernel_mode
 	rc=$?
-	set +x
 	set -e
-	exec 2>&3 3>&-
 	if [ $rc -ne 0 ]; then
 		log_warn "Could not start kernel agent, falling back to userspace mode"
 		start_userspace_agent
