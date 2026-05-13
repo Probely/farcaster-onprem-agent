@@ -248,6 +248,7 @@ func (r *resolver) exchange(ctx context.Context, query *dns.Msg, transport strin
 		return nil, fmt.Errorf("no resolvers configured")
 	}
 
+	// A dns.Client is safe for concurrent use by multiple goroutines.
 	client := r.clients.Get().(*dns.Client)
 	defer r.clients.Put(client)
 	client.Net = transport

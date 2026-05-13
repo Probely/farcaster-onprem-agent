@@ -103,6 +103,7 @@ func runDNSForward(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// A dns.Client is safe for concurrent use by multiple goroutines.
 	udpClient := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
 	tcpClient := &dns.Client{Net: "tcp", Timeout: 5 * time.Second}
 
