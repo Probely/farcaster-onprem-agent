@@ -4,7 +4,7 @@ WORKDIR /app
 COPY *.go go.mod go.sum ./
 RUN go build -o proxyprobe
 
-FROM debian:bookworm-slim
+FROM debian:12.14-slim
 
 WORKDIR /app
 COPY --from=builder /app/proxyprobe .
