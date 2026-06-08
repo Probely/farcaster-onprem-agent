@@ -20,7 +20,7 @@ services:
     stop_grace_period: 1s
 
   proxy:
-    image: ubuntu:noble
+    image: debian:13-slim
     volumes:
       - shared-logs:/logs
     command:
