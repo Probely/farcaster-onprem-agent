@@ -76,7 +76,6 @@ RUN set -eux \
        dnsmasq \
        wireguard-tools \
        ca-certificates \
-       ipcalc \
     && apt-get clean \
     && for d in bin etc lib run sbin; do mkdir -p /farcaster/"${d}"; done \
     && ln -s /run/farcaster/wg-tunnel.conf /farcaster/etc/ \
@@ -91,6 +90,8 @@ RUN set -eux \
     && ln /usr/local/bin/farconn /usr/local/bin/diag \
     && chgrp diag /usr/local/bin/diag \
     && chmod g+s /usr/local/bin/diag \
+    # Force-remove perl: unused here, and a recurring CVE source.
+    && dpkg --purge --force-remove-essential perl-base \
     # Cleanup
     && apt-get clean \
     && rm -rf /var/lib/apt \
