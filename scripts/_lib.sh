@@ -123,10 +123,31 @@ get_iface_addr() {
 	ip addr show "$1" | grep "\s*inet " | awk -F' ' '{print $2}'
 }
 
+is_ipv4_addr() {
+	# Return 0 if $1 is a literal IPv4 address, optionally with a /prefix
+	# (e.g. "1.2.3.4" or "1.2.3.4/24"); IPv6 literals report as non-IP.
+	local input=${1-} addr prefix octet
+	local -a octets
+
+	[[ ${input} =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]] || return 1
+
+	if [[ ${input} == */* ]]; then
+		prefix=${input##*/}
+		(( 10#${prefix} <= 32 )) || return 1
+	fi
+
+	addr=${input%%/*}
+	IFS=. read -r -a octets <<< "${addr}"
+	for octet in "${octets[@]}"; do
+		(( 10#${octet} <= 255 )) || return 1
+	done
+	return 0
+}
+
 resolve_host() {
 	host="$1"
 	# If it's an IP address already (/netmask ok), we're done.
-	if ! ipcalc -n -b "${host}" 2>&1 | grep -qi "INVALID ADDRESS"; then
+	if is_ipv4_addr "${host}"; then
 		echo "${host}"
 		return 0
 	fi

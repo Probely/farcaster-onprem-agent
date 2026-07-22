@@ -5,7 +5,7 @@ COPY . .
 WORKDIR /src/farcaster-go
 RUN CGO_ENABLED=0 go test ./integration/proxy -c -o /testrunner
 
-FROM debian:12.14-slim
+FROM debian:12.15-slim
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y iptables dnsutils && rm -rf /var/lib/apt/lists/*
 COPY --from=build /testrunner /usr/local/bin/testrunner
 COPY tests/proxy/runner/proxy-enforcer.sh /usr/local/bin/proxy-enforcer.sh
