@@ -8,8 +8,11 @@ import (
 )
 
 type WireguardStats struct {
-	// The number of seconds since the last handshake.
-	LastHandshakeTimeSec int64
+	// The time of the most recent handshake, in seconds since the Unix epoch.
+	// Zero means no handshake has completed yet. This is an absolute timestamp,
+	// not an age: the WireGuard userspace API defines last_handshake_time_sec as
+	// "expressed relative to the Unix epoch". See https://www.wireguard.com/xplatform/
+	LastHandshakeUnixSec int64
 	// The number of bytes transmitted.
 	TxBytes uint64
 	// The number of bytes received.
@@ -50,7 +53,7 @@ func DeviceStats(dev *device.Device) (*WireguardStats, error) {
 			if err != nil {
 				return nil, err
 			}
-			stats.LastHandshakeTimeSec = value
+			stats.LastHandshakeUnixSec = value
 		}
 	}
 	return stats, nil
