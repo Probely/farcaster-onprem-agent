@@ -12,7 +12,7 @@ extract_proxy_host() {
     # Remove path
     proxy_url=$(echo "${proxy_url}" | sed -r 's|/.*$||')
     # Remove userinfo
-    proxy_url=$(echo "${proxy_url}" | sed 's|^[^@]*@||')
+    proxy_url="${proxy_url#*@}"
 
     # IPv6 address
     if echo "${proxy_url}" | grep -q '^\[.*\]'; then
@@ -40,7 +40,7 @@ init_environment() {
 setup_proxy_environment() {
     # Sync uppercase/lowercase for each of HTTP_PROXY, HTTPS_PROXY, NO_PROXY
     for var in HTTP_PROXY HTTPS_PROXY NO_PROXY; do
-        lower="$(echo "${var}" | tr 'A-Z' 'a-z')"
+        lower="$(echo "${var}" | tr '[:upper:]' '[:lower:]')"
         if [ -z "${!var:-}" ] && [ -n "${!lower:-}" ]; then
             export "${var}"="${!lower}"
         elif [ -n "${!var:-}" ] && [ -z "${!lower:-}" ]; then
@@ -74,21 +74,23 @@ determine_run_mode() {
     # Default to kernel mode
     export RUN_MODE="${RUN_MODE:---kernel}"
     # Check for WireGuard kernel support
-    export WIREGUARD_SUPPORT=$(check_kernel_wireguard && echo "yes" || echo "no")
+    WIREGUARD_SUPPORT=$(check_kernel_wireguard && echo "yes" || echo "no")
+    export WIREGUARD_SUPPORT
     if [ "${WIREGUARD_SUPPORT}" != "yes" ]; then
         echo "WireGuard kernel support check failed. Falling back to userspace mode..."
         echo "Make sure you are running Linux >= 5.6 and this container has the NET_ADMIN capability."
         export RUN_MODE="--user"
     fi
     # Check for iptables support
-    export IPT_CMD=$(check_iptables || echo "")
-    export IPT_SUPPORT=$([ -x "${IPT_CMD:-}" ] && echo "yes" || echo "no")
+    IPT_CMD=$(check_iptables || echo "")
+    IPT_SUPPORT=$([ -x "${IPT_CMD:-}" ] && echo "yes" || echo "no")
+    export IPT_CMD IPT_SUPPORT
     if [ "${IPT_SUPPORT}" != "yes" ]; then
         echo "iptables support check failed. Falling back to userspace mode..."
         echo "Make sure this container has the NET_ADMIN capability and iptables is installed."
         export RUN_MODE="--user"
     fi
-    echo "Determined run mode: $(echo "${RUN_MODE}" | sed 's/^--//')"
+    echo "Determined run mode: ${RUN_MODE#--}"
 }
 
 start_user_mode() {
@@ -105,6 +107,7 @@ start_kernel_mode() {
 }
 
 init_environment
+# shellcheck source=_lib.sh
 . "${FARCASTER_PATH}/bin/_lib.sh"
 
 determine_run_mode
