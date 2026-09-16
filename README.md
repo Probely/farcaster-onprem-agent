@@ -27,7 +27,7 @@ the Snyk API & Web Cloud infrastructure.
 ![Farcaster high-level network architecture](./assets/img_Farcaster_Network_Overview.png)
 
   ## Architecture Notes
-  1. Client edge security devices (FW, IPS, WAF, etc.) should be configured to whitelist Snyk API & Web Scanner and Asset Discovery service IPs.  Internal security devices (FW, IPS, WAF, etc.) should be configured to whitelist any scanning agent IPs.
+  1. Client edge security devices (FW, IPS, WAF, etc.) should be configured to whitelist Snyk API & Web Scanner and Asset Discovery service IPs, which are listed in [Scanner IP address](https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-api-web/start-scanning/overview-scan-access-and-connectivity/scanner-ip-address) and are not repeated in the table below.  Internal security devices (FW, IPS, WAF, etc.) should be configured to whitelist any scanning agent IPs.
   2. Firewall protocol inspection must be disabled for Farcaster Agent connectivity.  TLS Inspection (e.g NGFW or CASB) is not currently supported and should be disabled for Agent connectivity rules in any edge/cloud security devices or services.
   3. If required, Farcaster Agent will support tunnel connectivity via proxy, however performance may be impacted.  
   4. OOB Vulnerability checks are utilized to verify vulnerabilities that allow an attacker to initiate a connection from the target to a remotely controlled ip address / server (e.g. log4shell)
@@ -50,8 +50,8 @@ the Snyk API & Web Cloud infrastructure.
 | Tunnel         | `<agent-ip>` | - EU: `54.247.135.113`<br/>- US: `44.212.186.140`<br/>- AU: `54.253.10.194`          | `UDP`        | `any`         | `443`                  |
 | DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | Scan           | `<agent-ip>` | `<target-ip>`<sup>2</sup>          | `TCP`        | `any`         | `<target-port>`<sup>3</sup>    |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `52.17.201.157`<br/>- US: `52.72.180.55`<br/>- AU: `52.62.50.85`| `TCP` | `any`                  | `53`, `80`, `443`, `389` |
-| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `52.17.201.157`<br/>- US: `52.72.180.55`<br/>-AU: `52.62.50.85`| `UDP` | `any`                  | `53` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `szp.prbly.win` / `52.17.201.157`<br/>- US: `szpus.prbly.win` / `52.72.180.55`<br/>- AU: `szpau.prbly.win` / `52.62.50.85`| `TCP` | `any`                  | `53`, `80`, `443`, `389` |
+| OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `szp.prbly.win` / `52.17.201.157`<br/>- US: `szpus.prbly.win` / `52.72.180.55`<br/>- AU: `szpau.prbly.win` / `52.62.50.85`| `UDP` | `any`                  | `53` |
 | Docker         | `<agent-ip>` | `auth.docker.io`, `registry*.docker.io`<sup>5</sup>     | `TCP`        | `any`         | `443`        |
 
 Notes:
@@ -61,7 +61,7 @@ Notes:
   3. `<target-port>` is the TCP port used to access your web applications & apis on the target host (typically 80, 443, 8080, 8443, etc.)
   4. The IP addresses of these hosts are subject to change. We recommend allowing web access for the agent VM to all external destinations on tcp/443 (https). If this is not possible, the agent will use an HTTP proxy if you set the `HTTP_PROXY` variable.
   5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
-  6. This server receives connections from potentially vulnerable systems on your infrastructure. It is used, for example, to detect "Log4Shell"-type vulnerabilities. These connections are optional, but may impact the ability of Snyk API & Web to verify related vulnerabilitites if the connections are not allowed.
+  6. This server receives connections from potentially vulnerable systems on your infrastructure. It is used, for example, to detect "Log4Shell"-type vulnerabilities. These connections are optional, but may impact the ability of Snyk API & Web to verify related vulnerabilitites if the connections are not allowed. Allow the hostname as well as the IP address: some firewalls categorize the domain as malicious and sinkhole it, so an IP-only rule does not let the callback through.
 
 # Installation
 
@@ -105,7 +105,7 @@ Notes:
   
  ## Launch the agent
   * Use the `docker-compose.yml` you saved in **Step 1** of
-  [How to install a Scanning Agent](https://help.probely.com/en/articles/6503388-how-to-install-a-scanning-agent).
+  [How to install a Scanning Agent](https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-api-web/start-scanning/overview-scanning-agent/install-scanning-agent).
 
   * Start the Agent:
 
@@ -135,7 +135,7 @@ Notes:
 ```
 
   Once up and running, traffic destined for any targets configured to use the agent is routed through the vpn tunnel and proxied by the agent to connect to those targets on your private network. 
-  Learn more about [how to scan internal applications with a Scanning Agent](https://help.probely.com/en/articles/4615595-how-to-scan-internal-applications-with-a-scanning-agent).
+  Learn more about [how to scan internal applications with a Scanning Agent](https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-api-web/start-scanning/overview-scanning-agent/scan-internal-applications).
 
  ### Configuration Options
    The following configuration options can be set via environment variables when running the agent
