@@ -36,6 +36,26 @@ const (
 
 const defaultListenPort = 51820
 
+// maxHandshakeAge is how long the tunnel may go without a WireGuard handshake
+// before the agent stops reporting itself as connected. The peer configuration
+// sets PersistentKeepalive to 25 seconds, so a healthy tunnel re-handshakes
+// roughly every two minutes whether or not a scan is running. 180 seconds
+// leaves one missed re-handshake of margin, and matches the session timeout the
+// agent hub uses to decide whether an agent is online, so the agent and the
+// Probely UI agree on what "connected" means.
+const maxHandshakeAge = 180 * time.Second
+
+// isHandshakeFresh reports whether the tunnel handshaked recently enough to be
+// considered up. lastHandshakeUnixSec is an absolute Unix timestamp, as
+// reported by the WireGuard userspace API; zero means no handshake has
+// completed yet.
+func isHandshakeFresh(lastHandshakeUnixSec int64, now time.Time) bool {
+	if lastHandshakeUnixSec <= 0 {
+		return false
+	}
+	return now.Sub(time.Unix(lastHandshakeUnixSec, 0)) < maxHandshakeAge
+}
+
 func (s status) String() string {
 	switch s {
 	case StatusDisconnected:
@@ -447,7 +467,7 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 				continue // Don't fail immediately on stats error
 			}
 
-			if wgStats.LastHandshakeTimeSec > 0 {
+			if wgStats.LastHandshakeUnixSec > 0 {
 				a.log.Infof("WireGuard handshake successful over %s", protocol)
 				a.State.SetStatus(StatusConnected)
 				if protocol == "TCP" {
@@ -510,7 +530,7 @@ func (a *Agent) updateState(conn uint32) {
 					continue
 				}
 
-				if result.stats.LastHandshakeTimeSec > 0 && result.stats.LastHandshakeTimeSec < 300 {
+				if isHandshakeFresh(result.stats.LastHandshakeUnixSec, time.Now()) {
 					a.State.SetStatus(StatusConnected)
 				} else {
 					a.State.SetStatus(StatusConnecting)
