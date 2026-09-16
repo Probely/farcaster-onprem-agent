@@ -31,7 +31,7 @@ MODERN_BUILDX_ARGS = \
 	--build-arg GCC_VERSION=14
 
 .PHONY: all build build-local build-modern build-local-modern clean prepare check-version
-.PHONY: check check-go check-shell lint
+.PHONY: check check-go check-shell lint test-proxy test-agent
 
 all: build
 
@@ -51,6 +51,15 @@ check-shell:
 
 lint:
 	cd farcaster-go && golangci-lint run --new-from-rev=origin/main
+
+test-proxy:
+	@trap 'docker compose -f tests/proxy/docker-compose.yml down' EXIT; \
+		docker compose -f tests/proxy/docker-compose.yml up --build --abort-on-container-exit --exit-code-from testrunner
+
+test-agent:
+	@test -n "$$FARCASTER_AGENT_TOKEN" || { echo "Set FARCASTER_AGENT_TOKEN to a test agent token before running make test-agent." >&2; exit 1; }
+	@trap 'docker compose -f tests/agent/docker-compose.yml down' EXIT; \
+		docker compose -f tests/agent/docker-compose.yml up --build
 
 build: check-version prepare
 	docker buildx build $(BUILDX_ARGS) \
