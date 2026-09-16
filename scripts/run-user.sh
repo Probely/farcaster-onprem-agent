@@ -2,6 +2,7 @@
 
 set -eu
 
+# shellcheck source=_lib.sh
 . "${FARCASTER_PATH}"/bin/_lib.sh
 
 if [ "$(debug_level)" -gt 0 ]; then

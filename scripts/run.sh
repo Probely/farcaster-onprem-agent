@@ -5,6 +5,8 @@ set -eu
 # Store the original stderr
 exec 3>&2
 # Redirect stderr to the log file
+# Only the leaf log directory needs mode 0700; parent directories are shared.
+# shellcheck disable=SC2174
 if ! mkdir -pm 0700 "$(dirname "${LOG_FILE}")"; then
 	echo "Could not create the log directory! Using /dev/stderr for debug output..."
 	LOG_FILE="/dev/stderr"
@@ -13,6 +15,9 @@ exec 2>>"${LOG_FILE}"
 # Enable debug (will be printed to the log file)
 set -x
 
+# Only the leaf work directory needs mode 0700; parent directories are shared.
+# WORK_DIR is exported by entrypoint.sh.
+# shellcheck disable=SC2174,SC2153
 if ! mkdir -pm 0700 "${WORK_DIR}"; then
 	echo "Could not create the work directory ${WORK_DIR}!"
 	echo "Make sure this path is writable by the container user."
@@ -30,10 +35,12 @@ FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
 FARCASTER_PROXY_NAMES=${FARCASTER_PROXY_NAMES:-FARCASTER_PROXY_USE_HOSTNAMES}
 DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 
+# shellcheck source=_lib.sh
 . "${FARCASTER_PATH}"/bin/_lib.sh
 
 # Make sure we can run iptables
-export IPT_CMD=$(check_iptables || echo "")
+IPT_CMD=$(check_iptables || echo "")
+export IPT_CMD
 if [ -z "${IPT_CMD}" ]; then
 	echo "Could not run iptables. Make sure this container has the NET_ADMIN capability."
 	exit 1
@@ -62,7 +69,7 @@ fi
 if [ "${v2_config_success}" != "true" ]; then
 	# Legacy config files
 	if [ -f "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ]; then
-		cp "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" ${WORK_DIR}/
+		cp "${SECRETS_DIR_V0}/tunnel/wg-tunnel.conf" "${SECRETS_DIR_V0}/gateway/wg-gateway.conf" "${WORK_DIR}/"
 	# New (but previously built) config files
 	elif [ -f "${SECRETS_DIR_V2}/wg-tunnel.conf" ] && [ -f "${SECRETS_DIR_V2}/wg-gateway.conf" ]; then
 		cp ${SECRETS_DIR_V2}/* "${WORK_DIR}/"
