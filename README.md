@@ -19,6 +19,8 @@ The Agent is open-source, and the code is freely available on the official
   - [Additional Windows Options](#additional-windows-options)
   - [Windows Service Control](#windows-service-control)
   - [Troubleshooting](#troubleshooting)
+- [Building from source](#building-from-source)
+- [Development checks](#development-checks)
 
 # Network Architecture Overview
 The following diagram shows an example network topology for Farcaster agent based
@@ -61,7 +63,7 @@ Notes:
   3. `<target-port>` is the TCP port used to access your web applications & apis on the target host (typically 80, 443, 8080, 8443, etc.)
   4. The IP addresses of these hosts are subject to change. We recommend allowing web access for the agent VM to all external destinations on tcp/443 (https). If this is not possible, the agent will use an HTTP proxy if you set the `HTTP_PROXY` variable.
   5. At this time, the hosts are: `registry.docker.io` and `registry-1.docker.io`
-  6. This server receives connections from potentially vulnerable systems on your infrastructure. It is used, for example, to detect "Log4Shell"-type vulnerabilities. These connections are optional, but may impact the ability of Snyk API & Web to verify related vulnerabilitites if the connections are not allowed. Allow the hostname as well as the IP address: some firewalls categorize the domain as malicious and sinkhole it, so an IP-only rule does not let the callback through.
+  6. This server receives connections from potentially vulnerable systems on your infrastructure. It is used, for example, to detect "Log4Shell"-type vulnerabilities. These connections are optional, but may impact the ability of Snyk API & Web to verify related vulnerabilities if the connections are not allowed. Allow the hostname as well as the IP address: some firewalls categorize the domain as malicious and sinkhole it, so an IP-only rule does not let the callback through.
 
 # Installation
 
@@ -83,10 +85,10 @@ Notes:
    If you need help setting the Agent up on a Kubernetes cluster, please contact Snyk API & Web support team.
 
   ### Windows
-  Download the latest Window binary from the releases page [here](https://github.com/Probely/farcaster-onprem-agent/releases)
+  Download the latest Windows binary from the releases page [here](https://github.com/Probely/farcaster-onprem-agent/releases)
 
   ### Linux
-  Download and compile the source code to run the Farcaster Agent as a service on Linux.
+  See [Building from source](#building-from-source) to compile the Farcaster Agent for Linux.
  
  ## System checks
   Before installing the agent container on a Linux system, you can check that your host can run it by executing the following [script](https://raw.githubusercontent.com/Probely/farcaster-onprem-agent/main/farconn/host-check.sh) or run the command below:
@@ -110,7 +112,7 @@ Notes:
   * Start the Agent:
 
 ```shell
-    docker-compose up -d
+    docker compose up -d
 ```
 
   * Check that the Agent connected successfully
@@ -154,7 +156,7 @@ Notes:
 
     farcasterd -t <agent token> [optional switches]
 
-  | Required/Optional           | Switch    | Descrription |
+  | Required/Optional           | Switch    | Description |
   | -------------- | ---------- | -------------------------------------|
   | Req | -t, --token string     | Authentication token. Can either be the path to the token file, or the token itself
   | Opt |   --api-url string     | Override the default API URL
@@ -169,9 +171,20 @@ Notes:
   | Opt |   -v, --version        | Print the version and exit
 
  #### Windows Service Control
-    farcasterd service install -t [Agent token]   Install Farcasterd Service
-    farcasterd servive start | stop               Start or Stop Farcasterd Service
-    farcasterd service remove                     Uninstall Farcasterd Service  
+
+  Install the service, replacing `<agent token>` with your token:
+
+```shell
+farcasterd service install -t "<agent token>"
+```
+
+  Use these commands to start, stop, or remove the service:
+
+```shell
+farcasterd service start
+farcasterd service stop
+farcasterd service remove
+```
 
 
 # Troubleshooting
@@ -180,8 +193,8 @@ Notes:
   ### Unable to download Agent configuration
   - Ensure the host system can resolve api.probely.com and connect via https using e.g. curl or chrome.
   - Check to ensure proxy settings are not required for Agent connectivity.
-  - CASB / HTTPS inpection capabilitites which intercept the HTTPS connection for decode will result 
-      in the Agent being unable to verify the api.probely.com tls cerfificate.  We recommend configuring the 
+  - CASB / HTTPS inspection capabilities which intercept the HTTPS connection for decode will result
+      in the Agent being unable to verify the api.probely.com tls certificate.  We recommend configuring the
       device / service performing HTTPS interception to allow the Farcaster Agent to connect directly to 
       api.probely.com and the Farcaster hub, if that is not possible, tls cert verification can be disabled with 
       the FARCASTER_SKIP_CERT_VERIFY=TRUE environment variable.
@@ -189,7 +202,7 @@ Notes:
   ### Unable to connect (UDP/443 or UDP & TCP/443)
   - If firewalls are not permitting UDP/443 outbound from the agent to the appropriate Farcaster hub, as well as the appropriate return traffic, the connection will fall back to TCP/443 and the agent will show "Connected with Issues" in the Snyk API & Web UI.   
   - If firewalls are not permitting UDP/443 OR TCP/443 from the Agent to the Farcaster hub the agent will not be able to connect.
-  - In some cases protocol level firewall rules (e.g allow HTTPS protocol ONLY over TCP/443, allow QUIC prorocol ONLY over UDP/443, or allow "Standard Protocols only") the initial UDP connection or the initial TCP handshake will be successful, but subsequent communications will be blocked as the traffic is not using standard protocols.  Protocol based rules should be disabled or set to allow the protocol identified by the firewall (typically wireguard) for Agent communications.
+  - In some cases protocol level firewall rules (e.g allow HTTPS protocol ONLY over TCP/443, allow QUIC protocol ONLY over UDP/443, or allow "Standard Protocols only") the initial UDP connection or the initial TCP handshake will be successful, but subsequent communications will be blocked as the traffic is not using standard protocols.  Protocol based rules should be disabled or set to allow the protocol identified by the firewall (typically wireguard) for Agent communications.
 
   Please refer to [network requirements](#network-requirements) for Agent connectivity requirements.
 
@@ -237,26 +250,60 @@ Received your message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 # Building from source
 
-This step is **not** required to run the Agent.
+Build from source when developing the agent or creating a custom image. See [AGENTS.md](AGENTS.md) for the repository map and the two agent implementations.
 
-Follow these instructions if you want to understand how the Container is built.
-
-Check out the code from the repository:
+Clone the repository and enter its directory:
 
 ```shell
 git clone git@github.com:Probely/farcaster-onprem-agent.git
+cd farcaster-onprem-agent
 ```
 
-**Unless otherwise specified, these instructions must be run on the repository
-root.**
+Run the following commands from the repository root.
+
+## Go binaries
+
+Install Go at the version required by each module's `go.mod`, and GNU Make.
 
 ```shell
-VERSION=0.0.0 make build-local
+make -C farcaster-go VERSION=0.0.0
+make -C farconn
 ```
-# Container Images
-Remember to reference your custom-built Docker images in your docker command, in your `docker-compose.yml`
-file,  or Kubernetes pod/deployment manifest.  If not specified,
-the default Probely docker Agent images are used.  Internal repositories can be used by pushing the appropriate images and modifying docker, docker compose, or Kubernetes manifests appropriately.
+
+The binaries are written to `farcaster-go/bin/farcasterd` and `farconn/farconn`.
+
+## Container images
+
+Install Docker with Buildx to build the container. The local build target runs a privileged container to install binfmt handlers and prepares a Buildx builder.
+
+```shell
+make VERSION=0.0.0 build-local
+```
+
+This loads `probely/farcaster-onprem-agent:v0.0.0` into Docker. Use that image name in your Docker command, Compose file, or Kubernetes deployment. Use `build-local-modern` for the newer Debian base; its image tag ends in `-modern`.
+
+The `build` and `build-modern` targets publish images to Docker Hub. Use them only for release work.
+
+# Development checks
+
+Install Go, GNU Make, Bash, and ShellCheck. Run the routine checks from the repository root:
+
+```shell
+make check
+```
+
+This runs shell syntax checks, ShellCheck, shell helper tests, and Go vet and tests in all three Go modules. The Go tests run without an agent token, so they skip the live agent lifecycle test. Use `make check-shell` or `make check-go` to run one group of checks.
+
+For Go lint checks, install golangci-lint v2 and run `make lint`. This reports issues introduced since `origin/main`, matching CI's policy for new lint issues. CI also runs `make check`.
+
+For proxy integration tests, install Docker with Compose and run:
+
+```shell
+make test-proxy
+ENFORCE_PROXY=true make test-proxy
+```
+
+The second run blocks direct traffic inside the test container. Both commands use local test services, require container `NET_ADMIN`, and clean up the containers on exit. They do not need an agent token. Live agent checks are described in [tests/agent/README.md](tests/agent/README.md).
 
 # Security considerations
 
@@ -293,5 +340,5 @@ such as public IP addresses and complex firewall rules, are unnecessary or minim
 
 **Internal Firewalling**
 
-The agent may be installed in e.g. a partner DMZ or other firwalled segment to allow complete client control of the targets that can be accessed from the Agent, however, please keep in mind rules must allow connectivity for all Snyk API & Web targets, as well as any ancillary services and hosts required by those web apps and APIs.
+The agent may be installed in e.g. a partner DMZ or other firewalled segment to allow complete client control of the targets that can be accessed from the Agent, however, please keep in mind rules must allow connectivity for all Snyk API & Web targets, as well as any ancillary services and hosts required by those web apps and APIs.
 

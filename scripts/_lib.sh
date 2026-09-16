@@ -253,19 +253,22 @@ parse_proxy() {
 }
 
 get_proxy_username() {
-    local parsed=$(parse_proxy)
+    local parsed
+    parsed=$(parse_proxy) || return
     eval "${parsed}"
     echo "${username}"
 }
 
 get_proxy_password() {
-    local parsed=$(parse_proxy)
+    local parsed
+    parsed=$(parse_proxy) || return
     eval "${parsed}"
     echo "${password}"
 }
 
 get_proxy_address() {
-    local parsed=$(parse_proxy)
+    local parsed
+    parsed=$(parse_proxy) || return
     eval "${parsed}"
     echo "${host}${port:+:${port}}${path}"
 }
@@ -292,7 +295,7 @@ get_proxy_port() {
 		port=$(echo "${address}" | sed -r 's|^\[.*\]:||')
 	# IPv4 address or hostname
 	elif echo "${address}" | grep -q ':'; then
-		port=$(echo "${address}" | sed 's|^[^:]*:||')
+		port="${address#*:}"
 	fi
 
 	# Default to 8080 if no port specified
@@ -312,7 +315,7 @@ start_udp_over_tcp_tunnel() {
 	fi
 	remote_tcp_port="$3"
 	setpriv --reuid=tcptun --regid=tcptun --clear-groups --no-new-privs \
-		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen 127.0.0.1:${local_udp_port} > /dev/null &
+		nohup /usr/local/bin/udp2tcp --tcp-forward "${remote_ip}":"${remote_tcp_port}" --udp-listen "127.0.0.1:${local_udp_port}" > /dev/null &
 	pid=$!
 	sleep 2
 	kill -0 ${pid} 2>/dev/null && echo "${pid}" || echo "-1"
@@ -320,12 +323,6 @@ start_udp_over_tcp_tunnel() {
 
 get_first_nameserver() {
 	echo "1.1.1.1"
-	return 0
-    ns=$(grep -m 1 '^nameserver' /etc/resolv.conf | awk '{print $2}')
-	if [ -z "${ns}" ]; then
-		ns="127.0.0.1"
-	fi
-	echo "${ns}"
 }
 
 create_moproxy_config() {
@@ -458,7 +455,7 @@ escape_glob_literal() {
     for (( i=0; i<${#s}; i++ )); do
         char="${s:i:1}"
         case "$char" in
-            \\|\*|\?|\[|\]|\!|\@|\(|\)|\{|\}|\+|\?|\|) out+="\\$char" ;;
+            \\|\*|\?|\[|\]|\!|\@|\(|\)|\{|\}|\+|\|) out+="\\$char" ;;
             *) out+="$char" ;;
         esac
     done
@@ -544,7 +541,7 @@ is_moproxy_running() {
 }
 
 function check_kernel_wireguard() {
-  return $(ip link add wg-test type wireguard 2>/dev/null &&
-           ip link del wg-test > /dev/null 2>&1)
+  ip link add wg-test type wireguard 2>/dev/null &&
+    ip link del wg-test > /dev/null 2>&1
 }
 
