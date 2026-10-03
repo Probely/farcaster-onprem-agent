@@ -187,7 +187,7 @@ Notes:
       the FARCASTER_SKIP_CERT_VERIFY=TRUE environment variable.
 
   ### Unable to connect (UDP/443 or UDP & TCP/443)
-  - If firewalls are not permitting UDP/443 outbound from the agent to the appropriate Farcaster hub, as well as the appropriate return traffic, the connection will fall back to TCP/443 and the agent will show "Connected with Issues" in the Snyk API & Web UI.   
+  - If firewalls are not permitting UDP/443 outbound from the agent to the appropriate Farcaster hub, as well as the appropriate return traffic, the connection will fall back to TCP/443 and the agent will show "Connected over TCP" (with "UDP recommended") in the Snyk API & Web UI. Scans still run over TCP but can be slower, so UDP/443 is strongly recommended.
   - If firewalls are not permitting UDP/443 OR TCP/443 from the Agent to the Farcaster hub the agent will not be able to connect.
   - In some cases protocol level firewall rules (e.g allow HTTPS protocol ONLY over TCP/443, allow QUIC prorocol ONLY over UDP/443, or allow "Standard Protocols only") the initial UDP connection or the initial TCP handshake will be successful, but subsequent communications will be blocked as the traffic is not using standard protocols.  Protocol based rules should be disabled or set to allow the protocol identified by the firewall (typically wireguard) for Agent communications.
 
