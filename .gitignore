@@ -1,4 +1,6 @@
 tmp/
 secrets/
+token.txt
+*.log
 .vscode/
 .DS_Store
