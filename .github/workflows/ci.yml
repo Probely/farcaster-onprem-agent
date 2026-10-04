@@ -13,22 +13,22 @@ jobs:
   test:
     name: Test & Lint
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: farcaster-go
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
-          cache-dependency-path: farcaster-go/go.sum
+          go-version-file: farcaster-go/go.mod
+          cache-dependency-path: |
+            farcaster-go/go.sum
+            farconn/go.sum
+            contrib/proxyprobe/go.sum
 
-      - name: Run go vet
-        run: go vet ./...
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Run tests
-        run: go test ./...
+      - name: Run checks
+        run: make check
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: farcaster-go/go.mod
           cache-dependency-path: farcaster-go/go.sum
 
       - name: Run govulncheck

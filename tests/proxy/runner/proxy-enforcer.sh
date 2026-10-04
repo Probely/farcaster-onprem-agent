@@ -21,8 +21,8 @@ if [ "$ENFORCE_PROXY" = "true" ]; then
     iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 
     # Allow connections to proxy servers
-    iptables -A OUTPUT -d $HTTP_PROXY_IP -p tcp --dport 8080 -j ACCEPT
-    iptables -A OUTPUT -d $SOCKS_PROXY_IP -p tcp --dport 1080 -j ACCEPT
+    iptables -A OUTPUT -d "$HTTP_PROXY_IP" -p tcp --dport 8080 -j ACCEPT
+    iptables -A OUTPUT -d "$SOCKS_PROXY_IP" -p tcp --dport 1080 -j ACCEPT
 
     # Allow established connections (for proxy responses)
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
