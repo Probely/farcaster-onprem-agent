@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
           cache-dependency-path: farcaster-go/go.sum
 
       - name: Run go vet
@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
           cache-dependency-path: farcaster-go/go.sum
 
       - name: Run govulncheck
