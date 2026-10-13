@@ -50,7 +50,7 @@ func (d *httpProxyDialer) dialContext(ctx context.Context, network, addr string)
 		}
 		tlsConfig.ServerName = serverName
 		tlsConn := tls.Client(conn, tlsConfig)
-		if handshakeErr := tlsConn.Handshake(); handshakeErr != nil {
+		if handshakeErr := tlsConn.HandshakeContext(ctx); handshakeErr != nil {
 			conn.Close()
 			return nil, fmt.Errorf("tls handshake with proxy failed: %w", handshakeErr)
 		}

@@ -136,7 +136,8 @@ func (d *TCPProxyDialer) Dial(network, addr string) (net.Conn, error) {
 	return d.DialContext(ctx, network, addr)
 }
 
-// DialContext connects to the address on the named network using the provided context.
+// DialContext connects to the address on the named network. ctx bounds the
+// entire dial, including any proxy handshake.
 func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	// Only handle TCP connections for proxy.
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
