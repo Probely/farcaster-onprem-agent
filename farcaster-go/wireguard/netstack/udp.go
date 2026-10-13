@@ -86,7 +86,7 @@ func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
 		ns.logConnectionError(err, "Downstream UDP accept failed")
 		return
 	}
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	cr := r.ID()
 	raddr := netip.AddrPortFrom(parseIPv4(cr.LocalAddress), cr.LocalPort)
@@ -95,7 +95,7 @@ func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
 		ns.logConnectionError(err, "Upstream UDP dial failed")
 		return
 	}
-	defer upstream.Close() //nolint:errcheck
+	defer upstream.Close()
 
 	ns.proxyUDP(upstream, downstream)
 }
@@ -175,7 +175,7 @@ func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
 		ns.log.Debug("Downstream DNS UDP accept failed:", err)
 		return
 	}
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	q := getBuffer()
 	defer putBuffer(q)

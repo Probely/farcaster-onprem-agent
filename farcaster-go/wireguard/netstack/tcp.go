@@ -59,7 +59,7 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		ns.logConnectionError(err, "Upstream dial failed")
 		return
 	}
-	defer upstream.Close() //nolint:errcheck
+	defer upstream.Close()
 
 	downstream, err := ns.acceptDownstream(r)
 	if err != nil {
@@ -67,7 +67,7 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	ns.proxyTCP(upstream, downstream)
 }
@@ -193,7 +193,7 @@ func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	const (
 		writeTimeout = 5 * time.Second
