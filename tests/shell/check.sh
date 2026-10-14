@@ -13,6 +13,17 @@ trap 'echo "Shell helper check failed at line $LINENO." >&2' ERR
 [[ $(scrub_secrets 'token=a*[b]? other=plain' 'a*[b]?') == 'token=*** other=plain' ]]
 [[ $(get_first_nameserver) == 1.1.1.1 ]]
 
+[[ $(FARCASTER_TRANSPORT='' FARCASTER_FORCE_TCP='' resolve_transport) == auto ]]
+[[ $(FARCASTER_TRANSPORT=' WS ' FARCASTER_FORCE_TCP='' resolve_transport) == ws ]]
+[[ $(FARCASTER_TRANSPORT='  ' FARCASTER_FORCE_TCP=true resolve_transport) == tcp ]]
+[[ $(FARCASTER_TRANSPORT=udp FARCASTER_FORCE_TCP=1 resolve_transport) == udp ]]
+[[ $(FARCASTER_TRANSPORT='' FARCASTER_FORCE_TCP=Yes resolve_transport) == tcp ]]
+[[ $(FARCASTER_TRANSPORT='' FARCASTER_FORCE_TCP=false resolve_transport) == auto ]]
+if FARCASTER_TRANSPORT=quic resolve_transport >/dev/null 2>&1; then
+    echo 'resolve_transport accepted an unknown transport.' >&2
+    exit 1
+fi
+
 for helper in get_proxy_username get_proxy_password get_proxy_address; do
     if HTTP_PROXY='invalid proxy' "$helper" >/dev/null 2>&1; then
         echo "$helper accepted an invalid proxy." >&2
