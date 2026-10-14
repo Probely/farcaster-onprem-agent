@@ -14,7 +14,7 @@ DOCKER_URLS="
     * https://registry-1.docker.io"
 
 function print_status() {
-    if [ $1 -eq 0 ]; then
+    if [ "$1" -eq 0 ]; then
         print_ok
     else
         print_error
@@ -38,12 +38,12 @@ function check_docker_client() {
 }
 
 function check_docker_run() {
-    fallback=$1
-    cmd="docker run --rm probely/farcaster-onprem-agent echo 'Hello World'"
-    if [ ${fallback} -eq 1 ]; then
-        cmd="sudo ${cmd}"
+    local fallback=$1
+    local cmd=(docker run --rm probely/farcaster-onprem-agent echo 'Hello World')
+    if [ "${fallback}" -eq 1 ]; then
+        cmd=(sudo "${cmd[@]}")
     fi
-    ${cmd} > /dev/null 2>&1
+    "${cmd[@]}" > /dev/null 2>&1
 }
 
 echo -ne "Checking if Docker is installed...\t"
