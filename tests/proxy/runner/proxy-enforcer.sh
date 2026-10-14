@@ -3,6 +3,17 @@ set -e
 
 echo "Proxy Enforcer Script"
 
+# Wait before blocking direct traffic so every test service can be reached.
+for endpoint in echoserver:9000 echoserver:9001 echoserver:9443 httpproxy:8080 socks5proxy:1080; do
+    # The child shell expands its own positional arguments.
+    # shellcheck disable=SC2016
+    if ! timeout 30 bash -c 'until (: > "/dev/tcp/$1/$2") 2>/dev/null; do sleep 0.2; done' \
+        _ "${endpoint%:*}" "${endpoint##*:}"; then
+        echo "Test service $endpoint did not start within 30 seconds. Check its container logs." >&2
+        exit 1
+    fi
+done
+
 if [ "$ENFORCE_PROXY" = "true" ]; then
     echo "Setting up iptables rules to enforce proxy usage..."
 
