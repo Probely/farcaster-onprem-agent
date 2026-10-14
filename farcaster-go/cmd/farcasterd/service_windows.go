@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/sys/windows/svc"
+	"probely.com/farcaster/agent"
 	"probely.com/farcaster/config"
 	"probely.com/farcaster/osutils"
 	"probely.com/farcaster/settings"
@@ -152,6 +153,12 @@ var installCmd = &cobra.Command{
 		}
 		if appCfg.ipv6 {
 			svcArgs = append(svcArgs, "--ipv6")
+		}
+		if t := appCfg.conn.Transport; t != agent.TransportAuto {
+			svcArgs = append(svcArgs, "--transport", string(t))
+		}
+		if appCfg.conn.WSURL != "" {
+			svcArgs = append(svcArgs, "--ws-url", appCfg.conn.WSURL)
 		}
 
 		if err := winsvc.Install(settings.ServiceName, settings.Description, svcArgs); err != nil {

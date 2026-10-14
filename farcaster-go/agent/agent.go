@@ -1,12 +1,12 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
-	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,9 +32,17 @@ const (
 const (
 	ConnectionTCP = iota
 	ConnectionUDP
+	ConnectionWS
 )
 
 const defaultListenPort = 51820
+
+// maxHandshakeAge is how long the agent reports itself connected after a
+// handshake: WireGuard rejects a session 180s after its handshake.
+const maxHandshakeAge = 180 * time.Second
+
+// handshakeTimeout bounds the wait for the first handshake over each transport.
+var handshakeTimeout = 15 * time.Second
 
 func (s status) String() string {
 	switch s {
@@ -94,21 +102,29 @@ type Agent struct {
 	gw    tun.Device
 	gwDev *device.Device
 	// Connection count (including previous connections).
-	conns  atomic.Uint32
-	cancel chan struct{}
-	log    *zap.SugaredLogger
-	// WaitGroup to track background goroutines.
-	wg sync.WaitGroup
+	conns atomic.Uint32
+	// stopState stops the state updater of the current connection and waits
+	// for it to exit. Nil while disconnected.
+	stopState func()
+	log       *zap.SugaredLogger
 	// Flag to track if Close has already been called.
 	closing atomic.Bool
 	// Enable IPv6 DNS resolution.
 	useIPv6 bool
 	// Use hostnames in proxy requests when available.
 	proxyUseNames bool
+	conn          ConnOptions
+}
+
+// ConnOptions selects how the agent reaches the hub.
+type ConnOptions struct {
+	Transport Transport
+	// WSURL overrides the WebSocket URL derived from the hub endpoint.
+	WSURL string
 }
 
 // New creates a new agent.
-func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) *Agent {
+func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool, conn ConnOptions) *Agent {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -116,10 +132,10 @@ func New(token string, apiURLs []string, logger *zap.SugaredLogger, useIPv6 bool
 		State:         newState(),
 		token:         token,
 		apiURLs:       apiURLs,
-		cancel:        make(chan struct{}, 1), // Use buffered channel to ensure signal is not lost
 		log:           logger,
 		useIPv6:       useIPv6,
 		proxyUseNames: proxyUseNames,
+		conn:          conn,
 	}
 }
 
@@ -147,39 +163,63 @@ func (a *Agent) CheckToken() error {
 	return a.loadConfig(false)
 }
 
-func (a *Agent) UpTCP() error {
+// hubPeer loads the configuration, resolving the hub endpoint if possible, and
+// returns the tunnel's source address and the hub peer.
+func (a *Agent) hubPeer() (netip.AddrPort, *config.Peer, error) {
 	if err := a.loadConfig(false); err != nil {
-		return err
+		return netip.AddrPort{}, nil, err
 	}
 
 	tunCfg := a.cfg.Files["wg-tunnel.conf"]
 	if tunCfg == nil {
-		return fmt.Errorf("tunnel configuration not found")
+		return netip.AddrPort{}, nil, fmt.Errorf("tunnel configuration not found")
 	}
 	tunAddr := strings.Split(tunCfg.Address, "/")[0]
 	tunPort := tunCfg.ListenPort
 
 	srcAddr, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", tunAddr, tunPort))
 	if err != nil {
-		return fmt.Errorf("invalid tunnel address: %w", err)
+		return netip.AddrPort{}, nil, fmt.Errorf("invalid tunnel address: %w", err)
 	}
 
 	if len(tunCfg.Peers) == 0 {
-		return fmt.Errorf("no peers found in tunnel configuration")
+		return netip.AddrPort{}, nil, fmt.Errorf("no peers found in tunnel configuration")
 	}
-
-	peer := tunCfg.Peers[0]
-
-	bind, err := wireguard.NewTCPBind(&srcAddr, peer.OrigEndpoint, peer.Endpoint, a.log)
-	if err != nil {
-		return fmt.Errorf("failed to create TCP bind: %w", err)
-	}
-
-	return a.up(bind)
+	return srcAddr, tunCfg.Peers[0], nil
 }
 
-func (a *Agent) Up() error {
-	return a.up(conn.NewStdNetBind())
+// newBind returns the WireGuard bind for transport t.
+func (a *Agent) newBind(t Transport) (conn.Bind, error) {
+	switch t {
+	case TransportUDP:
+		return conn.NewStdNetBind(), nil
+	case TransportTCP:
+		srcAddr, peer, err := a.hubPeer()
+		if err != nil {
+			return nil, err
+		}
+		bind, err := wireguard.NewTCPBind(&srcAddr, peer.OrigEndpoint, peer.Endpoint, a.log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TCP bind: %w", err)
+		}
+		return bind, nil
+	case TransportWS:
+		srcAddr, peer, err := a.hubPeer()
+		if err != nil {
+			return nil, err
+		}
+		u, err := wireguard.WSURL(peer.OrigEndpoint, a.conn.WSURL)
+		if err != nil {
+			return nil, err
+		}
+		bind, err := wireguard.NewWSBind(&srcAddr, peer.Endpoint, wireguard.WSConfig{URL: u}, a.log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create WebSocket bind: %w", err)
+		}
+		return bind, nil
+	default:
+		return nil, fmt.Errorf("unknown transport %q", t)
+	}
 }
 
 func (a *Agent) up(bind conn.Bind) error {
@@ -268,10 +308,18 @@ func (a *Agent) up(bind conn.Bind) error {
 	}
 
 	// Increment the connection count.
-	a.conns.Add(1)
-	connID := a.conns.Load()
+	connID := a.conns.Add(1)
 
-	go a.updateState(connID)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.updateState(ctx, a.tunDev, connID)
+	}()
+	a.stopState = func() {
+		cancel()
+		<-done
+	}
 
 	return nil
 }
@@ -284,6 +332,7 @@ func (a *Agent) Down() error {
 	return dev.Down()
 }
 
+// Close stops the state updater and tears down the gateway and tunnel devices.
 func (a *Agent) Close() {
 	// Check if Close has already been called to avoid deadlocks
 	if a.closing.Swap(true) {
@@ -292,28 +341,53 @@ func (a *Agent) Close() {
 	}
 
 	a.log.Debug("Close() started")
+	a.disconnect()
+	a.log.Debug("Close() completed successfully")
+}
 
-	close(a.cancel)
-	a.log.Debug("Signaled all background goroutines to exit")
+// ConnectWait tries each transport in the configured order and
+// returns once WireGuard completes a handshake over one of them. If every
+// transport fails, it closes the agent.
+func (a *Agent) ConnectWait() error {
+	var errs []error
+	for _, t := range a.conn.Transport.steps() {
+		a.log.Infof("Connecting over %s...", t.label())
+		err := a.connect(t)
+		if err == nil {
+			return nil
+		}
+		a.log.Warnf("%s connection failed: %v", t.label(), err)
+		errs = append(errs, fmt.Errorf("%s: %w", t.label(), err))
+		a.disconnect()
+	}
+	a.Close()
+	return errors.Join(errs...)
+}
 
-	a.log.Debug("Waiting for background goroutines...")
-	waitDone := make(chan struct{})
-	go func() {
-		a.wg.Wait()
-		close(waitDone)
-	}()
+// connect starts the tunnel over transport t and waits for the first handshake.
+func (a *Agent) connect(t Transport) error {
+	bind, err := a.newBind(t)
+	if err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
+	if err := a.up(bind); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
+	hub := a.cfg.Files["wg-tunnel.conf"].Peers[0]
+	return a.checkConnection(t, hub.OrigEndpoint)
+}
 
-	select {
-	case <-waitDone:
-		a.log.Debug("All background goroutines exited successfully")
-	case <-time.After(5 * time.Second):
-		a.log.Warn("Timed out waiting for background goroutines to exit - proceeding with cleanup anyway")
+// disconnect stops the state updater and closes the gateway and tunnel devices
+// so the next transport attempt starts from a fresh configuration.
+func (a *Agent) disconnect() {
+	if a.stopState != nil {
+		a.stopState()
+		a.stopState = nil
 	}
 
 	if a.gw != nil {
 		a.log.Debug("Closing gateway TUN device")
-		err := a.gw.Close()
-		if err != nil {
+		if err := a.gw.Close(); err != nil {
 			a.log.Warnf("Failed to close gateway: %v", err)
 		}
 		a.gw = nil
@@ -322,8 +396,7 @@ func (a *Agent) Close() {
 
 	if a.tun != nil {
 		a.log.Debug("Closing tunnel TUN device")
-		err := a.tun.Close()
-		if err != nil {
+		if err := a.tun.Close(); err != nil {
 			a.log.Warnf("Failed to close tunnel: %v", err)
 		}
 		a.tun = nil
@@ -332,7 +405,7 @@ func (a *Agent) Close() {
 
 	if a.gwDev != nil {
 		a.log.Debug("Bringing down gateway WireGuard device")
-		a.gwDev.Down()
+		_ = a.gwDev.Down()
 		a.log.Debug("Waiting before closing gateway WireGuard device")
 		time.Sleep(250 * time.Millisecond)
 		a.log.Debug("Closing gateway WireGuard device")
@@ -343,7 +416,7 @@ func (a *Agent) Close() {
 
 	if a.tunDev != nil {
 		a.log.Debug("Bringing down tunnel WireGuard device")
-		a.tunDev.Down()
+		_ = a.tunDev.Down()
 		a.log.Debug("Waiting before closing tunnel WireGuard device")
 		time.Sleep(250 * time.Millisecond)
 		a.log.Debug("Closing tunnel WireGuard device")
@@ -353,84 +426,10 @@ func (a *Agent) Close() {
 	}
 
 	a.cfg = nil
-	a.log.Debug("Close() completed successfully")
 }
 
-func (a *Agent) ConnectWait(maxTries int) error {
-	connect := func(upFunc func() error, protocol string) error {
-		if err := upFunc(); err != nil {
-			return fmt.Errorf("failed to start agent: %w", err)
-		}
-		if a.tunDev == nil {
-			return fmt.Errorf("tunnel not configured")
-		}
-		hub := a.cfg.Files["wg-tunnel.conf"].Peers[0]
-		return a.checkConnection(protocol, hub.OrigEndpoint)
-	}
-
-	// Helper function to clean up resources if the connection fails
-	cleanupFailedConnection := func() {
-		// Clean up any partial resources but don't fully close the agent
-		// This ensures we can reuse the agent for the next connection attempt
-		if a.tunDev != nil {
-			a.log.Debug("Bringing down tunnel WireGuard device")
-			a.tunDev.Down()
-			a.log.Debug("Waiting before closing tunnel WireGuard device")
-			time.Sleep(250 * time.Millisecond)
-			a.log.Debug("Closing tunnel WireGuard device")
-			a.tunDev.Close()
-			a.tunDev = nil
-			a.log.Debug("Tunnel WireGuard device closed")
-		}
-
-		if a.gwDev != nil {
-			a.log.Debug("Bringing down gateway WireGuard device")
-			a.gwDev.Down()
-			a.log.Debug("Waiting before closing gateway WireGuard device")
-			time.Sleep(250 * time.Millisecond)
-			a.log.Debug("Closing gateway WireGuard device")
-			a.gwDev.Close()
-			a.gwDev = nil
-			a.log.Debug("Gateway WireGuard device closed")
-		}
-
-		a.cfg = nil
-	}
-
-	forceTCP, _ := strconv.ParseBool(os.Getenv("FARCASTER_FORCE_TCP"))
-	if forceTCP {
-		a.log.Info("TCP connection forced. Connecting...")
-		err := connect(a.UpTCP, "TCP")
-		if err != nil {
-			a.log.Infof("TCP connection failed: %v", err)
-			a.Close() // Fully close the agent only if TCP fails
-			return err
-		}
-		return nil
-	}
-
-	a.log.Info("Connecting via UDP...")
-	var err error
-	if err = connect(a.Up, "UDP"); err == nil {
-		return nil
-	}
-	a.log.Warnf("UDP connection failed: %v", err)
-
-	// Don't fully close the agent here, just clean up resources
-	cleanupFailedConnection()
-
-	a.log.Info("Trying TCP...")
-	err = connect(a.UpTCP, "TCP")
-	if err != nil {
-		a.log.Warnf("TCP connection failed: %v", err)
-		a.Close() // Fully close the agent since both attempts failed
-		return err
-	}
-	return nil
-}
-
-func (a *Agent) checkConnection(protocol, endpoint string) error {
-	a.log.Infof("Connecting to %s %s (will wait up to 30 seconds)...", endpoint, protocol)
+func (a *Agent) checkConnection(t Transport, endpoint string) error {
+	a.log.Infof("Connecting to %s %s (will wait up to %s)...", endpoint, t.label(), handshakeTimeout)
 
 	startTime := time.Now()
 	checkTicker := time.NewTicker(500 * time.Millisecond)
@@ -438,7 +437,7 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 	defer checkTicker.Stop()
 	defer logTicker.Stop()
 
-	for time.Since(startTime) < 30*time.Second {
+	for time.Since(startTime) < handshakeTimeout {
 		select {
 		case <-checkTicker.C:
 			wgStats, err := wireguard.DeviceStats(a.tunDev)
@@ -448,30 +447,31 @@ func (a *Agent) checkConnection(protocol, endpoint string) error {
 			}
 
 			if wgStats.LastHandshakeTimeSec > 0 {
-				a.log.Infof("WireGuard handshake successful over %s", protocol)
+				a.log.Infof("WireGuard handshake successful over %s", t.label())
 				a.State.SetStatus(StatusConnected)
-				if protocol == "TCP" {
+				switch t {
+				case TransportTCP:
 					a.State.ConnectionType = ConnectionTCP
-				} else {
+				case TransportWS:
+					a.State.ConnectionType = ConnectionWS
+				default:
 					a.State.ConnectionType = ConnectionUDP
 				}
 				return nil
 			}
 
 		case <-logTicker.C:
-			elapsed := int(time.Since(startTime).Seconds())
-			a.log.Infof("Waiting for WireGuard handshake... %d/30 seconds", elapsed)
+			elapsed := time.Since(startTime).Round(time.Second)
+			a.log.Infof("Waiting for WireGuard handshake... %s/%s", elapsed, handshakeTimeout)
 		}
 	}
 
 	return fmt.Errorf("connection timed out waiting for WireGuard handshake")
 }
 
-// UpdateState periodically updates the agent state.
-func (a *Agent) updateState(conn uint32) {
-	a.wg.Add(1)
-	defer a.wg.Done()
-
+// updateState refreshes the agent status from dev every 30 seconds until ctx
+// is canceled.
+func (a *Agent) updateState(ctx context.Context, dev *device.Device, conn uint32) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -479,21 +479,16 @@ func (a *Agent) updateState(conn uint32) {
 
 	for {
 		select {
-		case <-a.cancel:
+		case <-ctx.Done():
 			a.log.Infof("Stopped state updater for connection %d", conn)
 			return
 		case <-ticker.C:
-			dev := a.tunDev
-			if dev == nil {
-				a.log.Errorf("Could not get tunnel device")
-				return
-			}
-
-			// Add timeout for DeviceStats to prevent blocking forever
+			// Buffer capacity 1 lets the goroutine send and exit after a
+			// timeout or cancellation.
 			statsChan := make(chan struct {
 				stats *wireguard.WireguardStats
 				err   error
-			})
+			}, 1)
 
 			go func() {
 				stats, err := wireguard.DeviceStats(dev)
@@ -510,7 +505,7 @@ func (a *Agent) updateState(conn uint32) {
 					continue
 				}
 
-				if result.stats.LastHandshakeTimeSec > 0 && result.stats.LastHandshakeTimeSec < 300 {
+				if handshakeFresh(result.stats.LastHandshakeTimeSec, time.Now()) {
 					a.State.SetStatus(StatusConnected)
 				} else {
 					a.State.SetStatus(StatusConnecting)
@@ -520,10 +515,16 @@ func (a *Agent) updateState(conn uint32) {
 				a.log.Errorf("Timed out waiting for device stats")
 				continue
 
-			case <-a.cancel:
+			case <-ctx.Done():
 				a.log.Infof("Canceled while waiting for device stats (connection %d)", conn)
 				return
 			}
 		}
 	}
+}
+
+// handshakeFresh reports whether a handshake at Unix time last, in seconds, is
+// younger than maxHandshakeAge at now. Zero means no handshake yet.
+func handshakeFresh(last int64, now time.Time) bool {
+	return last > 0 && now.Sub(time.Unix(last, 0)) < maxHandshakeAge
 }
