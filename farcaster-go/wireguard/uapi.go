@@ -8,7 +8,7 @@ import (
 )
 
 type WireguardStats struct {
-	// The number of seconds since the last handshake.
+	// The Unix time of the last handshake in seconds, or zero before the first.
 	LastHandshakeTimeSec int64
 	// The number of bytes transmitted.
 	TxBytes uint64

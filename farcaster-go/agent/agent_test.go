@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -16,17 +17,12 @@ func TestAgentLifecycle(t *testing.T) {
 	logger := zap.NewNop().Sugar()
 	useIPv6 := false
 	proxyUseNames := false
-	a := New(token, nil, logger, useIPv6, proxyUseNames)
+	a := New(token, nil, logger, useIPv6, proxyUseNames, ConnOptions{})
 	if a.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
 
-	err := a.Up()
-	if err != nil {
-		t.Errorf("Failed to start agent: %v", err)
-	}
-
-	err = a.ConnectWait(5)
+	err := a.ConnectWait()
 	if err != nil {
 		t.Errorf("Failed to connect to agent hub: %v", err)
 	}
@@ -42,17 +38,12 @@ func TestAgentLifecycle(t *testing.T) {
 	t.Logf("Closing agent a...")
 	a.Close()
 
-	b := New(token, nil, logger, useIPv6, proxyUseNames)
+	b := New(token, nil, logger, useIPv6, proxyUseNames, ConnOptions{})
 	if b.CheckToken() != nil {
 		t.Error("Valid token considered invalid")
 	}
 
-	err = b.Up()
-	if err != nil {
-		t.Errorf("Failed to start agent: %v", err)
-	}
-
-	err = b.ConnectWait(5)
+	err = b.ConnectWait()
 	if err != nil {
 		t.Errorf("Failed to connect to agent hub: %v", err)
 	}
@@ -63,4 +54,24 @@ func TestAgentLifecycle(t *testing.T) {
 	}
 
 	b.Close()
+}
+
+func TestHandshakeFresh(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	tests := []struct {
+		name string
+		last int64
+		want bool
+	}{
+		{"no handshake", 0, false},
+		{"just under max age", now.Add(-maxHandshakeAge + time.Second).Unix(), true},
+		{"at max age", now.Add(-maxHandshakeAge).Unix(), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := handshakeFresh(tt.last, now); got != tt.want {
+				t.Fatalf("handshakeFresh(%d) = %v, want %v", tt.last, got, tt.want)
+			}
+		})
+	}
 }

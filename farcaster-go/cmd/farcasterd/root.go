@@ -18,11 +18,10 @@ import (
 	"probely.com/farcaster/control"
 	"probely.com/farcaster/settings"
 	"probely.com/farcaster/system"
+	"probely.com/farcaster/wireguard"
 )
 
 const (
-	maxConnTries = 3
-
 	// Environment variable name for the API (old name) and AGENT tokens.
 	envOldTokenName = "FARCASTER_API_TOKEN"
 	envTokenName    = "FARCASTER_AGENT_TOKEN"
@@ -41,6 +40,9 @@ type agentConfig struct {
 	apiURL        string
 	ipv6          bool
 	proxyUseNames bool
+	transport     string
+	wsURL         string
+	conn          agent.ConnOptions // Resolved from transport and wsURL.
 }
 
 var (
@@ -61,6 +63,18 @@ func parseConfig(cfg *agentConfig) error {
 	}
 	cfg.token = strings.TrimSpace(token)
 	cfg.apiURLs = append(cfg.apiURLs, getAPIURLs(cfg.apiURL)...)
+
+	transport, err := agent.ResolveTransport(cfg.transport)
+	if err != nil {
+		return err
+	}
+	cfg.wsURL = strings.TrimSpace(cfg.wsURL)
+	if cfg.wsURL != "" {
+		if _, err := wireguard.ParseWSURL(cfg.wsURL); err != nil {
+			return err
+		}
+	}
+	cfg.conn = agent.ConnOptions{Transport: transport, WSURL: cfg.wsURL}
 	return nil
 }
 
@@ -107,6 +121,8 @@ func init() {
 
 	rootCmd.PersistentFlags().BoolVarP(&appCfg.ipv6, "ipv6", "", false, "Enable IPv6/AAAA DNS query resolution")
 	rootCmd.PersistentFlags().BoolVar(&appCfg.proxyUseNames, "proxy-names", defaultProxyUseNames, "Use hostnames instead of IPs in proxy CONNECT/SOCKS5 requests")
+	rootCmd.PersistentFlags().StringVar(&appCfg.transport, "transport", "", "Hub transport: auto (UDP, then TCP, then WebSocket), udp, tcp or ws. Defaults to FARCASTER_TRANSPORT")
+	rootCmd.PersistentFlags().StringVar(&appCfg.wsURL, "ws-url", os.Getenv("FARCASTER_WS_URL"), "Override the hub's WebSocket URL, wss://<hub host>/v1/wg")
 }
 
 // Execute runs the agent.
@@ -138,7 +154,7 @@ func runAgent(cfg agentConfig) {
 
 	// If the --check-token flag is set, we just check if the token is valid.
 	if cfg.checkToken {
-		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames)
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames, cfg.conn)
 		if err := a.CheckToken(); err != nil {
 			logger.Errorf("Token validation failed: %v", err)
 			exit(1)
@@ -163,12 +179,8 @@ func runAgent(cfg agentConfig) {
 	}
 
 	startAgent := func() error {
-		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames)
-		if err := a.ConnectWait(maxConnTries); err != nil {
-			a.Close()
-			return err
-		}
-		return nil
+		a := agent.New(cfg.token, cfg.apiURLs, logger, cfg.ipv6, cfg.proxyUseNames, cfg.conn)
+		return a.ConnectWait()
 	}
 
 	// Start the agent as a Windows service.
