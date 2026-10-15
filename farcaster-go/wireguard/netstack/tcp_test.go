@@ -1,18 +1,23 @@
 package netstack
 
 import (
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/pem"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"probely.com/farcaster/dialers"
+	"probely.com/farcaster/tlsconfig"
 )
 
 const testWait = 5 * time.Second
@@ -94,6 +99,25 @@ func httpProxy(t *testing.T) *url.URL {
 	return &url.URL{Scheme: "http", Host: s.Listener.Addr().String()}
 }
 
+// httpsProxy serves HTTP CONNECT over TLS.
+func httpsProxy(t *testing.T) *url.URL {
+	t.Helper()
+	return tlsProxy(t, http.HandlerFunc(serveConnect))
+}
+
+// tlsProxy serves h over TLS, with its certificate trusted through
+// FARCASTER_CUSTOM_CA.
+func tlsProxy(t *testing.T, h http.Handler) *url.URL {
+	t.Helper()
+	s := httptest.NewTLSServer(h)
+	t.Cleanup(s.Close)
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.Certificate().Raw})
+	t.Setenv("FARCASTER_CUSTOM_CA", base64.StdEncoding.EncodeToString(ca))
+	tlsconfig.ResetCache()
+	t.Cleanup(tlsconfig.ResetCache)
+	return &url.URL{Scheme: "https", Host: s.Listener.Addr().String()}
+}
+
 // socks5Proxy serves SOCKS5 CONNECT to IPv4 targets without authentication.
 func socks5Proxy(t *testing.T) *url.URL {
 	t.Helper()
@@ -140,6 +164,7 @@ func TestDialUpstreamThroughProxy(t *testing.T) {
 		proxy func(t *testing.T) *url.URL
 	}{
 		{"http", httpProxy},
+		{"https", httpsProxy},
 		{"socks5", socks5Proxy},
 	}
 	for _, tt := range tests {
@@ -170,5 +195,55 @@ func TestDialUpstreamThroughProxy(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, "pong:ping")
 			}
 		})
+	}
+}
+
+// TestDialUpstreamCloseStalledHTTPSProxy checks that closing an HTTPS proxy
+// connection returns at once when the proxy has stopped reading.
+func TestDialUpstreamCloseStalledHTTPSProxy(t *testing.T) {
+	proxyURL := tlsProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, brw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, _ = brw.WriteString("HTTP/1.1 200 OK\r\n\r\n")
+		_ = brw.Flush()
+		<-t.Context().Done()
+	}))
+	ns := &netstack{dialer: dialers.NewTCPProxyDialerWithProxyFunc(testWait,
+		func(string) (*url.URL, error) { return proxyURL, nil }, nil)}
+	up, err := ns.dialUpstream(t.Context(), "192.0.2.10:443")
+	if err != nil {
+		t.Fatalf("dialUpstream: %v", err)
+	}
+
+	// Fill the socket buffers through the TCP connection, keeping the TLS
+	// state intact, until a write makes no progress.
+	tc := up.(tlsHalfCloser).NetConn()
+	chunk := make([]byte, 1<<20)
+	for {
+		if err := tc.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+		n, err := tc.Write(chunk)
+		if n == 0 && errors.Is(err, os.ErrDeadlineExceeded) {
+			break
+		}
+		if err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("fill socket buffers: %v", err)
+		}
+	}
+	if err := tc.SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	err = up.Close()
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("Close took %s", took)
+	}
+	if err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 }
