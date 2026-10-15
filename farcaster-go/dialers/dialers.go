@@ -47,17 +47,7 @@ type TCPProxyDialer struct {
 // NewTCPProxyDialer creates a TCP dialer that automatically handles proxy configuration
 // from environment variables.
 func NewTCPProxyDialer(timeout time.Duration, log *zap.SugaredLogger) *TCPProxyDialer {
-	if log == nil {
-		log = zap.NewNop().Sugar()
-	}
-	d := &TCPProxyDialer{
-		timeout:    timeout,
-		proxyFunc:  proxyFromEnvironment,
-		proxyHosts: make(map[string]bool),
-		log:        log,
-	}
-	d.initProxyHosts()
-	return d
+	return NewTCPProxyDialerWithProxyFunc(timeout, proxyFromEnvironment, log)
 }
 
 // NewTCPProxyDialerWithProxyFunc creates a TCP dialer with custom proxy resolution logic.
