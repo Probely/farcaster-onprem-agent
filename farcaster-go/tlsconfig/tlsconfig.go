@@ -40,7 +40,7 @@ func GetTLSConfig() (*tls.Config, error) {
 func buildTLSConfig() (*tls.Config, error) {
 	tlsConfig := &tls.Config{}
 
-	// Check for skip verify first (takes precedence for backward compatibility)
+	// Check for skip verify first (takes precedence for backward compatibility).
 	if val := os.Getenv("FARCASTER_SKIP_CERT_VERIFY"); val != "" {
 		switch strings.ToLower(val) {
 		case "1", "ok", "true", "yes", "enable", "enabled":
