@@ -62,14 +62,9 @@ func (s status) String() string {
 // state represents the agent state.
 type state struct {
 	ConnectionType int
-	Uptime         uint32
-	TxBytes        uint64
-	RxBytes        uint64
-
-	status atomic.Uint32
+	status         atomic.Uint32
 }
 
-// NewState creates a new application state.
 func newState() *state {
 	s := &state{}
 	s.SetStatus(StatusDisconnected)
@@ -87,31 +82,22 @@ func (s *state) Status() status {
 // Agent represents the Farcaster agent. It is responsible for managing the
 // tunnel and the gateway connections. It's not thread-safe.
 type Agent struct {
-	// Agent state.
-	State *state
-	// API token.
-	token string
-	// API URLs.
+	State   *state
+	token   string
 	apiURLs []string
-	// Configuration.
-	cfg *config.FarcasterConfig
-	// Tunnel.
-	tun    tun.Device
-	tunDev *device.Device
-	// Gateway.
-	gw    tun.Device
-	gwDev *device.Device
+	cfg     *config.FarcasterConfig
+	tun     tun.Device
+	tunDev  *device.Device
+	gw      tun.Device
+	gwDev   *device.Device
 	// Connection count (including previous connections).
 	conns atomic.Uint32
 	// stopState stops the state updater of the current connection and waits
 	// for it to exit. Nil while disconnected.
-	stopState func()
-	log       *zap.SugaredLogger
-	// Flag to track if Close has already been called.
-	closing atomic.Bool
-	// Enable IPv6 DNS resolution.
-	useIPv6 bool
-	// Use hostnames in proxy requests when available.
+	stopState     func()
+	log           *zap.SugaredLogger
+	closing       atomic.Bool
+	useIPv6       bool
 	proxyUseNames bool
 	conn          ConnOptions
 }
@@ -324,6 +310,7 @@ func (a *Agent) up(bind conn.Bind) error {
 	return nil
 }
 
+// Down brings down the tunnel device.
 func (a *Agent) Down() error {
 	dev := a.tunDev
 	if dev == nil {
@@ -334,7 +321,6 @@ func (a *Agent) Down() error {
 
 // Close stops the state updater and tears down the gateway and tunnel devices.
 func (a *Agent) Close() {
-	// Check if Close has already been called to avoid deadlocks
 	if a.closing.Swap(true) {
 		a.log.Debug("Close already in progress, skipping")
 		return
@@ -443,7 +429,7 @@ func (a *Agent) checkConnection(t Transport, endpoint string) error {
 			wgStats, err := wireguard.DeviceStats(a.tunDev)
 			if err != nil {
 				a.log.Warnf("Failed getting tunnel stats: %v", err)
-				continue // Don't fail immediately on stats error
+				continue // Don't fail immediately on stats error.
 			}
 
 			if wgStats.LastHandshakeTimeSec > 0 {
@@ -485,17 +471,15 @@ func (a *Agent) updateState(ctx context.Context, dev *device.Device, conn uint32
 		case <-ticker.C:
 			// Buffer capacity 1 lets the goroutine send and exit after a
 			// timeout or cancellation.
-			statsChan := make(chan struct {
-				stats *wireguard.WireguardStats
+			type statsResult struct {
+				stats *wireguard.Stats
 				err   error
-			}, 1)
+			}
+			statsChan := make(chan statsResult, 1)
 
 			go func() {
 				stats, err := wireguard.DeviceStats(dev)
-				statsChan <- struct {
-					stats *wireguard.WireguardStats
-					err   error
-				}{stats, err}
+				statsChan <- statsResult{stats, err}
 			}()
 
 			select {
