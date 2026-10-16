@@ -20,7 +20,8 @@ var (
 
 // GetTLSConfig returns a TLS configuration based on the following environment variables:
 //   - FARCASTER_SKIP_CERT_VERIFY: Skip certificate verification (insecure).
-//   - FARCASTER_CUSTOM_CA: Base64-encoded CA certificate(s) to trust.
+//   - FARCASTER_CUSTOM_CA: CA certificate(s) to trust, as the path to a PEM
+//     file or as base64-encoded PEM.
 func GetTLSConfig() (*tls.Config, error) {
 	configOnce.Do(func() {
 		cachedConfig, cachedConfigErr = buildTLSConfig()
@@ -54,10 +55,9 @@ func buildTLSConfig() (*tls.Config, error) {
 		return tlsConfig, nil
 	}
 
-	// Decode base64.
-	caData, err := base64.StdEncoding.DecodeString(customCA)
+	caData, err := readCustomCA(customCA)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode FARCASTER_CUSTOM_CA: %w", err)
+		return nil, err
 	}
 
 	// Create certificate pool with system CAs.
@@ -74,6 +74,23 @@ func buildTLSConfig() (*tls.Config, error) {
 	tlsConfig.RootCAs = rootCAs
 
 	return tlsConfig, nil
+}
+
+// readCustomCA reads PEM data from the regular file at value, or decodes value
+// as base64.
+func readCustomCA(value string) ([]byte, error) {
+	if fi, err := os.Stat(value); err == nil && fi.Mode().IsRegular() { //nolint:gosec // The operator chooses the path.
+		data, err := os.ReadFile(value) //nolint:gosec // The operator chooses the path.
+		if err != nil {
+			return nil, fmt.Errorf("failed to read FARCASTER_CUSTOM_CA: %w", err)
+		}
+		return data, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("FARCASTER_CUSTOM_CA is neither a file nor base64-encoded PEM: %w", err)
+	}
+	return data, nil
 }
 
 // addCertsFromPEM adds certificates from PEM data to the pool.

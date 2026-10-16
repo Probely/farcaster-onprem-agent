@@ -2,17 +2,22 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
+	"golang.zx2c4.com/wireguard/conn"
 
 	d "probely.com/farcaster/dialers"
+	"probely.com/farcaster/wireguard"
 )
 
 func writeAndEcho(t *testing.T, conn net.Conn, line string) {
@@ -94,7 +99,7 @@ func TestTCPViaEnvProxy(t *testing.T) {
 	}
 }
 
-func TestWebSocketProxyMatrix(t *testing.T) {
+func TestWebSocketViaEnvProxy(t *testing.T) {
 	echoWS := os.Getenv("ECHO_WS")
 	httpProxy := os.Getenv("HTTP_PROXY_URL")
 	socksProxy := os.Getenv("SOCKS_PROXY_URL")
@@ -102,49 +107,73 @@ func TestWebSocketProxyMatrix(t *testing.T) {
 		t.Skip("missing envs")
 	}
 
-	clear := func() {
-		for _, v := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"} {
-			os.Unsetenv(v)
-		}
+	cases := []struct {
+		name  string
+		proxy string
+	}{
+		{"intercepting http", httpProxy},
+		{"socks5", socksProxy},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, v := range []string{"HTTP_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"} {
+				t.Setenv(v, "")
+			}
+			t.Setenv("HTTPS_PROXY", tc.proxy)
+			wsRoundTrip(t, echoWS)
+		})
+	}
+}
+
+// wsRoundTrip sends a datagram over a WebSocket bind to the echo server at
+// wsURL and waits for its echo, resending while the bind connects.
+func wsRoundTrip(t *testing.T, wsURL string) {
+	t.Helper()
+	u, err := wireguard.ParseWSURL(wsURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := netip.MustParseAddrPort("10.0.0.1:51820")
+	// The echo server and mitmproxy present self-signed certificates.
+	cfg := wireguard.WSConfig{URL: u, TLSConfig: &tls.Config{InsecureSkipVerify: true}}
+	b, err := wireguard.NewWSBind(&src, "192.0.2.1:443", cfg, zaptest.NewLogger(t).Sugar())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns, _, err := b.Open(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	ep, err := b.ParseEndpoint("192.0.2.1:443")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	t.Run("wss via HTTPS_PROXY", func(t *testing.T) {
-		clear()
-		t.Setenv("HTTPS_PROXY", httpProxy)
-		// Assert CONNECT observed by proxy via env flag used by proxy image (mitmproxy logs to stdout).
-		tlsConfig := &tls.Config{InsecureSkipVerify: true}
-		conn, err := d.NewWebSocketDialer(echoWS, tlsConfig, 12*time.Second).Dial()
-		if err != nil {
-			if os.Getenv("ENFORCE_PROXY") == "true" {
-				t.Fatalf("wss via HTTPS_PROXY failed under enforcement: %v", err)
+	echoed := make(chan []byte, 1)
+	go func() {
+		bufs := [][]byte{make([]byte, 65535)}
+		sizes, eps := make([]int, 1), make([]conn.Endpoint, 1)
+		if n, err := fns[0](bufs, sizes, eps); err == nil && n == 1 {
+			echoed <- bufs[0][:sizes[0]]
+		}
+	}()
+
+	want := []byte("hello-ws")
+	deadline := time.After(12 * time.Second)
+	for {
+		if err := b.Send([][]byte{want}, ep); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		select {
+		case got := <-echoed:
+			if !bytes.Equal(got, want) {
+				t.Fatalf("echo %q, want %q", got, want)
 			}
-			t.Fatalf("wss via HTTPS_PROXY failed: %v", err)
+			return
+		case <-time.After(200 * time.Millisecond):
+		case <-deadline:
+			t.Fatal("no echo within 12s")
 		}
-		conn.Close()
-	})
-
-	t.Run("wss via ALL_PROXY", func(t *testing.T) {
-		clear()
-		t.Setenv("ALL_PROXY", httpProxy)
-		tlsConfig := &tls.Config{InsecureSkipVerify: true}
-		conn, err := d.NewWebSocketDialer(echoWS, tlsConfig, 12*time.Second).Dial()
-		if err != nil {
-			t.Fatalf("wss via ALL_PROXY failed: %v", err)
-		}
-		conn.Close()
-	})
-
-	t.Run("ws via HTTP_PROXY", func(t *testing.T) {
-		clear()
-		wsURL := "ws://echoserver:9001/"
-		t.Setenv("HTTP_PROXY", httpProxy)
-		conn, err := d.NewWebSocketDialer(wsURL, nil, 12*time.Second).Dial()
-		if err != nil {
-			t.Fatalf("ws via HTTP_PROXY failed: %v", err)
-		}
-		conn.Close()
-	})
-
-	// Also test socks5 for wss via ALL_PROXY when desired environment is present
-	_ = socksProxy // currently not used in these subtests
+	}
 }

@@ -14,8 +14,11 @@ services:
     #   FARCASTER_API_URL
     #   Probely's API URL. If not set, the Agent will use the API URLs for all regions.
     #
+    #   FARCASTER_TRANSPORT
+    #   How the Agent connects to Probely/Snyk: auto (default: UDP, then TCP, then WebSocket), udp, tcp or ws.
+    #
     #   FARCASTER_FORCE_TCP
-    #   If set to true, the Agent will use TCP to connect to Probely/Snyk.
+    #   If set to true, the Agent will use TCP to connect to Probely/Snyk, like FARCASTER_TRANSPORT=tcp.
     #
     #   FARCASTER_PROXY_NAMES
     #   If set to true, the Agent will use hostnames in proxy requests when available.
@@ -27,6 +30,7 @@ services:
     - FARCASTER_AGENT_TOKEN
     - FARCASTER_API_URL
     - HTTP_PROXY
+    - FARCASTER_TRANSPORT
     - FARCASTER_FORCE_TCP
     - FARCASTER_PROXY_NAMES
     tmpfs:

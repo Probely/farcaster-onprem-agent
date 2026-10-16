@@ -1,9 +1,18 @@
 package tlsconfig
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/pem"
+	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestGetTLSConfig(t *testing.T) {
@@ -105,9 +114,6 @@ func TestGetTLSConfig(t *testing.T) {
 		}
 	})
 
-	// Note: Testing with a real certificate would require generating a test CA
-	// which is beyond the scope of this unit test
-
 	t.Run("config is cloned", func(t *testing.T) {
 		os.Setenv("FARCASTER_SKIP_CERT_VERIFY", "true")
 		os.Unsetenv("FARCASTER_CUSTOM_CA")
@@ -143,6 +149,59 @@ func TestGetTLSConfig(t *testing.T) {
 			t.Error("modifying cloned config affected cached config")
 		}
 	})
+}
+
+func TestCustomCASources(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"base64 PEM", base64.StdEncoding.EncodeToString(caPEM)},
+		{"PEM file", caFile},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("FARCASTER_SKIP_CERT_VERIFY", "")
+			t.Setenv("FARCASTER_CUSTOM_CA", tt.value)
+			ResetCache()
+			t.Cleanup(ResetCache)
+
+			config, err := GetTLSConfig()
+			if err != nil {
+				t.Fatalf("GetTLSConfig: %v", err)
+			}
+			if _, err := ca.Verify(x509.VerifyOptions{Roots: config.RootCAs}); err != nil {
+				t.Fatalf("custom CA is not trusted: %v", err)
+			}
+		})
+	}
 }
 
 func TestResetCache(t *testing.T) {

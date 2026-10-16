@@ -1,16 +1,6 @@
-// Package dialers provides network dialers with built-in proxy support.
-//
-// This package offers multiple dialer implementations that handle proxy
-// configuration from environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
-// and route connections through the appropriate proxy type (HTTP CONNECT, SOCKS5)
-// or directly as needed.
-//
-// The main dialers provided are:
-//   - TCPProxyDialer: A TCP dialer with automatic proxy detection and routing.
-//   - WebSocketDialer: Specialized dialer for WebSocket connections with proxy support.
-//
-// All dialers implement or follow the standard net.Dialer interface,
-// making them compatible with existing Go networking code.
+// Package dialers provides TCPProxyDialer, a net.Dialer-compatible dialer that
+// routes TCP connections directly or through HTTP CONNECT, HTTPS CONNECT, or
+// SOCKS5 proxies configured by HTTP_PROXY, HTTPS_PROXY, and NO_PROXY.
 package dialers
 
 import (
