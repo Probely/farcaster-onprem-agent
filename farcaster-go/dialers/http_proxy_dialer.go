@@ -50,7 +50,7 @@ func (d *httpProxyDialer) dialContext(ctx context.Context, network, addr string)
 		}
 		tlsConfig.ServerName = serverName
 		tlsConn := tls.Client(conn, tlsConfig)
-		if handshakeErr := tlsConn.Handshake(); handshakeErr != nil {
+		if handshakeErr := tlsConn.HandshakeContext(ctx); handshakeErr != nil {
 			conn.Close()
 			return nil, fmt.Errorf("tls handshake with proxy failed: %w", handshakeErr)
 		}
@@ -75,7 +75,9 @@ func (d *httpProxyDialer) dialContext(ctx context.Context, network, addr string)
 			done <- fmt.Errorf("failed to send CONNECT: %w", err)
 			return
 		}
-		br := bufio.NewReader(conn)
+		// The bytes after the response belong to the target, so read only up
+		// to the end of the headers and leave the rest on conn.
+		br := bufio.NewReader(oneByteReader{conn})
 		resp, err := http.ReadResponse(br, req)
 		if err != nil {
 			done <- fmt.Errorf("failed to read CONNECT response: %w", err)
@@ -101,4 +103,15 @@ func (d *httpProxyDialer) dialContext(ctx context.Context, network, addr string)
 		}
 		return conn, nil
 	}
+}
+
+// oneByteReader reads at most one byte per call, so a bufio.Reader over it
+// reads only the bytes its caller requests.
+type oneByteReader struct{ r io.Reader }
+
+func (o oneByteReader) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	return o.r.Read(p)
 }
