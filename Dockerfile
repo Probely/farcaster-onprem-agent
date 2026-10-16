@@ -4,8 +4,8 @@ ARG FINAL_BASE="debian:12.15-slim"
 ARG GCC_VERSION="12"
 
 FROM --platform=$BUILDPLATFORM ${RUST_BUILDER_BASE} AS rust_builder
-ENV moproxy_tag=v0.5.1
-ENV udp_over_tcp_tag=v0.4.0
+ENV moproxy_commit=56319aa8a69f30efbd0bf0cabf05a9fc172c508e
+ENV udp_over_tcp_commit=75eb1fd638fa8a659dc4f23a152f61c23c609be2
 ARG TARGETARCH
 ARG GCC_VERSION
 RUN set -eux \
@@ -17,7 +17,7 @@ RUN set -eux \
     # moproxy \
     && git clone https://github.com/sorz/moproxy \
     && cd moproxy \
-    && git checkout -b tags/$moproxy_tag \
+    && git checkout $moproxy_commit \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
     && env CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-${GCC_VERSION}" cargo build --release --target ${RUST_TARGET}-unknown-linux-gnu \
     && mkdir -p target/release \
@@ -26,7 +26,7 @@ RUN set -eux \
     && cd / \
     && git clone https://github.com/Probely/udp-over-tcp.git \
     && cd udp-over-tcp \
-    && git checkout -b tags/$udp_over_tcp_tag \
+    && git checkout $udp_over_tcp_commit \
     && rustup target add ${RUST_TARGET}-unknown-linux-gnu \
     && env \
         CARGO_TARGET_$(echo ${RUST_TARGET} | tr [:lower:] [:upper:])_UNKNOWN_LINUX_GNU_LINKER="${RUST_TARGET}-linux-gnu-gcc-${GCC_VERSION}" \
