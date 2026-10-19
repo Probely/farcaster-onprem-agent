@@ -114,3 +114,28 @@ func TestWebSocketDialer_Construct(t *testing.T) {
 	// Construction should not panic and should set reasonable defaults.
 	_ = NewWebSocketDialer("wss://example.com/ws", nil, 5*time.Second)
 }
+
+func TestWithDefaultPort(t *testing.T) {
+	tests := []struct {
+		name  string
+		proxy string
+		want  string // Host of the returned URL.
+	}{
+		{"explicit port", "http://proxy.example:3128", "proxy.example:3128"},
+		{"http", "http://proxy.example", "proxy.example:80"},
+		{"https", "https://proxy.example", "proxy.example:443"},
+		{"socks5h", "socks5h://proxy.example", "proxy.example:1080"},
+		{"IPv6 literal", "http://[2001:db8::1]", "[2001:db8::1]:80"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, err := url.Parse(tt.proxy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := withDefaultPort(u).Host; got != tt.want {
+				t.Errorf("Host = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

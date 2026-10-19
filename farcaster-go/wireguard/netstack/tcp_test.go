@@ -166,6 +166,11 @@ func TestDialUpstreamThroughProxy(t *testing.T) {
 		{"http", httpProxy},
 		{"https", httpsProxy},
 		{"socks5", socks5Proxy},
+		{"socks5h", func(t *testing.T) *url.URL {
+			u := socks5Proxy(t)
+			u.Scheme = "socks5h"
+			return u
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

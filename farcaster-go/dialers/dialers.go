@@ -101,11 +101,7 @@ func (d *TCPProxyDialer) initProxyHosts() {
 		if err != nil || u.Host == "" {
 			continue
 		}
-		host := u.Host
-		if h, _, e := net.SplitHostPort(u.Host); e == nil {
-			host = h
-		}
-		host = strings.ToLower(host)
+		host := strings.ToLower(u.Hostname())
 		d.proxyHosts[host] = true
 
 		// If host is an IP, record it directly.
@@ -169,6 +165,7 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 		return dialer.DialContext(ctx, network, addr)
 	}
 
+	proxyURL = withDefaultPort(proxyURL)
 	d.log.Debugf("proxy: via %s addr=%s NO_PROXY=%q", proxyURL.Redacted(), addr, os.Getenv("NO_PROXY"))
 
 	// Route through appropriate proxy type.
@@ -182,7 +179,7 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 			pd.auth = generateProxyAuth(proxyURL.User)
 		}
 		return pd.dialContext(ctx, network, addr)
-	case "socks5":
+	case "socks5", "socks5h":
 		pd := &socks5ProxyDialer{
 			proxyURL: proxyURL,
 			timeout:  d.timeout,
@@ -191,6 +188,28 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
 	}
+}
+
+// withDefaultPort returns u with its scheme's default port if u omits one, as
+// net/http does.
+func withDefaultPort(u *url.URL) *url.URL {
+	if u.Port() != "" {
+		return u
+	}
+	var port string
+	switch u.Scheme {
+	case "http":
+		port = "80"
+	case "https":
+		port = "443"
+	case "socks5", "socks5h":
+		port = "1080"
+	default:
+		return u
+	}
+	c := *u
+	c.Host = net.JoinHostPort(u.Hostname(), port)
+	return &c
 }
 
 func generateProxyAuth(user *url.Userinfo) string {
