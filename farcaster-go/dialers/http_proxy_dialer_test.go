@@ -1,12 +1,14 @@
 package dialers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,5 +66,34 @@ func TestHTTPProxyDialerKeepsBytesAfterResponse(t *testing.T) {
 				t.Fatalf("read %q, want %q", got, banner)
 			}
 		})
+	}
+}
+
+// TestHTTPProxyDialerRejectedConnect checks that a rejected CONNECT fails
+// with the proxy status while the response body is still pending.
+func TestHTTPProxyDialerRejectedConnect(t *testing.T) {
+	release := make(chan struct{})
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, _ = c.Write([]byte("HTTP/1.1 403 Forbidden\r\nContent-Length: 65536\r\n\r\n"))
+		<-release
+	}))
+	t.Cleanup(s.Close)
+	t.Cleanup(func() { close(release) })
+	proxyURL, err := url.Parse(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewTCPProxyDialerWithProxyFunc(5*time.Second, func(string) (*url.URL, error) { return proxyURL, nil }, nil)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err = d.DialContext(ctx, "tcp", "192.0.2.10:22")
+	if err == nil || !strings.Contains(err.Error(), "403 Forbidden") {
+		t.Fatalf("DialContext error = %v, want the 403 status", err)
 	}
 }

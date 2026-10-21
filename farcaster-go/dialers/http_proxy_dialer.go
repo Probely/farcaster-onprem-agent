@@ -84,9 +84,8 @@ func (d *httpProxyDialer) dialContext(ctx context.Context, network, addr string)
 			return
 		}
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			done <- fmt.Errorf("proxy CONNECT failed: %s, body: %s", resp.Status, string(body))
+			// Report only the status; the caller closes conn.
+			done <- fmt.Errorf("proxy CONNECT failed: %s", resp.Status)
 			return
 		}
 		done <- nil
