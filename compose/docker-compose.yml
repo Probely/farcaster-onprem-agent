@@ -26,13 +26,19 @@ services:
     #   FARCASTER_PROXY_NAMES
     #   If set to true, the Agent will use hostnames in proxy requests when available.
     #
-    #   HTTP_PROXY (optional)
+    #   HTTP_PROXY, HTTPS_PROXY, NO_PROXY (optional)
     #   An advanced option that can be used to configure an HTTP proxy for the Agent to connect to Probely.
+    #
+    #   FARCASTER_CUSTOM_CA (optional)
+    #   Extra trusted CAs (base64 PEM or mounted file path), e.g. a TLS-inspecting proxy's CA.
     #
     environment:
     - FARCASTER_AGENT_TOKEN
     - FARCASTER_API_URL
     - HTTP_PROXY
+    - HTTPS_PROXY
+    - NO_PROXY
+    - FARCASTER_CUSTOM_CA
     - FARCASTER_TRANSPORT
     - FARCASTER_WS_URL
     - FARCASTER_FORCE_TCP
