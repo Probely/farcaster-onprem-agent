@@ -32,25 +32,18 @@ func (d *socks5ProxyDialer) dialContext(ctx context.Context, network, addr strin
 		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 	}
 
-	// proxy.Dialer doesn't support context, so we handle cancellation.
-	type dialResult struct {
-		conn net.Conn
-		err  error
+	// DialWithConn runs the SOCKS5 handshake on conn in place, bounded by ctx,
+	// so dialContext returns the *net.TCPConn from baseDialer.
+	conn, err := baseDialer.DialContext(ctx, "tcp", d.proxyURL.Host)
+	if err != nil {
+		return nil, fmt.Errorf("SOCKS5 connection failed: %w", err)
 	}
-	ch := make(chan dialResult, 1)
-
-	go func() {
-		conn, err := socks5.Dial(network, addr)
-		ch <- dialResult{conn, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("SOCKS5 dial cancelled: %w", ctx.Err())
-	case result := <-ch:
-		if result.err != nil {
-			return nil, fmt.Errorf("SOCKS5 connection failed: %w", result.err)
-		}
-		return result.conn, nil
+	handshaker := socks5.(interface {
+		DialWithConn(ctx context.Context, c net.Conn, network, address string) (net.Addr, error)
+	})
+	if _, err := handshaker.DialWithConn(ctx, conn, network, addr); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("SOCKS5 connection failed: %w", err)
 	}
+	return conn, nil
 }

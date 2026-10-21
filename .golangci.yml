@@ -5,3 +5,14 @@ linters:
     - gosec
     - gocritic
     - errorlint
+  settings:
+    gosec:
+      excludes:
+        - G104 # errcheck already reports unchecked errors.
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec

@@ -2,6 +2,7 @@ package netstack
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -18,7 +19,7 @@ import (
 )
 
 // halfCloser is a connection that can shut down its read and write streams
-// independently. Both *net.TCPConn and *gonet.TCPConn satisfy it.
+// independently. *net.TCPConn, *gonet.TCPConn, and tlsHalfCloser satisfy it.
 type halfCloser interface {
 	io.ReadWriteCloser
 	CloseWrite() error
@@ -59,7 +60,7 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		ns.logConnectionError(err, "Upstream dial failed")
 		return
 	}
-	defer upstream.Close() //nolint:errcheck
+	defer upstream.Close()
 
 	downstream, err := ns.acceptDownstream(r)
 	if err != nil {
@@ -67,25 +68,51 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	ns.proxyTCP(upstream, downstream)
 }
 
 // dialUpstream dials the real server with the proxy-aware dialer and
-// applies TCP keepalives.
-func (ns *netstack) dialUpstream(ctx context.Context, addr string) (*net.TCPConn, error) {
+// enables TCP keepalives on the underlying TCP connection.
+func (ns *netstack) dialUpstream(ctx context.Context, addr string) (halfCloser, error) {
 	conn, err := ns.dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	tc := conn.(*net.TCPConn)
+	var upstream halfCloser
+	var tc *net.TCPConn
+	switch c := conn.(type) {
+	case *net.TCPConn:
+		upstream, tc = c, c
+	case *tls.Conn:
+		// An HTTPS proxy tunnel runs over a TCP connection to the proxy.
+		tc, _ = c.NetConn().(*net.TCPConn)
+		upstream = tlsHalfCloser{Conn: c, tcp: tc}
+	}
+	if tc == nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("unsupported upstream connection type %T", conn)
+	}
 	if err := setTCPConnTimeouts(tc, keepaliveInterval, keepaliveCount); err != nil {
-		_ = tc.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("set upstream keepalives: %w", err)
 	}
-	return tc, nil
+	return upstream, nil
 }
+
+// tlsHalfCloser half-closes a TLS connection over TCP: CloseWrite sends a TLS
+// close_notify, and CloseRead shuts down reading on the TCP connection.
+type tlsHalfCloser struct {
+	*tls.Conn
+	tcp *net.TCPConn
+}
+
+func (c tlsHalfCloser) CloseRead() error { return c.tcp.CloseRead() }
+
+// Close closes the underlying TCP connection directly, tearing down the
+// tunnel at once and unblocking any in-flight TLS read or write.
+func (c tlsHalfCloser) Close() error { return c.tcp.Close() }
 
 // acceptDownstream completes the SYN handshake and returns the netstack-side
 // connection. On error, the caller must Complete(true) to send a RST.
@@ -193,7 +220,7 @@ func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	completed = true
-	defer downstream.Close() //nolint:errcheck
+	defer downstream.Close()
 
 	const (
 		writeTimeout = 5 * time.Second
