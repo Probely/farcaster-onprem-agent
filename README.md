@@ -30,7 +30,7 @@ the Snyk API & Web Cloud infrastructure.
 
   ## Architecture Notes
   1. Client edge security devices (FW, IPS, WAF, etc.) should be configured to whitelist Snyk API & Web Scanner and Asset Discovery service IPs, which are listed in [Scanner IP address](https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-api-web/start-scanning/overview-scan-access-and-connectivity/scanner-ip-address) and are not repeated in the table below.  Internal security devices (FW, IPS, WAF, etc.) should be configured to whitelist any scanning agent IPs.
-  2. Firewall protocol inspection must be disabled for Farcaster Agent connectivity.  TLS Inspection (e.g NGFW or CASB) is not currently supported and should be disabled for Agent connectivity rules in any edge/cloud security devices or services.
+  2. Firewall protocol inspection must be disabled for Farcaster Agent connectivity.  TLS Inspection (e.g., NGFW or CASB) works only with the WebSocket transport (`FARCASTER_TRANSPORT=ws`) and `FARCASTER_CUSTOM_CA` set to the inspecting CA; otherwise, disable it for Agent connectivity rules in any edge/cloud security devices or services.
   3. If required, Farcaster Agent will support tunnel connectivity via proxy, however performance may be impacted.  
   4. OOB Vulnerability checks are utilized to verify vulnerabilities that allow an attacker to initiate a connection from the target to a remotely controlled ip address / server (e.g. log4shell)
   5. api.probely.com IP addresses may be subject to change, we recommend configuring firewall rules to allow Farcaster  agents outbound https access based on DNS name, or allowing outbound communications to all https destinations.
@@ -50,6 +50,7 @@ the Snyk API & Web Cloud infrastructure.
 | -------------- | ---------- | -------------------------------------| ------------ | -------------------- | -------------------- |
 | API            | `<agent-ip>`<sup>1</sup> | `api.probely.com`<sup>4</sup>        | `TCP`        | `any`         | `443`                  |
 | Tunnel         | `<agent-ip>` | - EU: `54.247.135.113`<br/>- US: `44.212.186.140`<br/>- AU: `54.253.10.194`          | `UDP`        | `any`         | `443`                  |
+| Tunnel (WebSocket fallback) | `<agent-ip>` | - EU: `hub.farcaster.probely.com`<br/>- US: `hub.farcaster.us.probely.com`<br/>- AU: `hub.farcaster.au.probely.com` | `TCP` | `any` | `443` |
 | DNS            | `<agent-ip>` | `<internal-dns-resolvers>`           | `TCP`, `UDP` | `any`                | `53`                   |
 | Scan           | `<agent-ip>` | `<target-ip>`<sup>2</sup>          | `TCP`        | `any`         | `<target-port>`<sup>3</sup>    |
 | OOB Vulnerability Check <sup>6</sup> | `<agent-ip>`, `<target-ip>` | - EU: `szp.prbly.win` / `52.17.201.157`<br/>- US: `szpus.prbly.win` / `52.72.180.55`<br/>- AU: `szpau.prbly.win` / `52.62.50.85`| `TCP` | `any`                  | `53`, `80`, `443`, `389` |
@@ -147,8 +148,11 @@ Notes:
   |  Req   | FARCASTER_AGENT_TOKEN   | Agent API Key                |
   |  Opt   | FARCASTER_API_URL                 | url of API server                |
   |  Opt   | FARCASTER_DEBUG_LEVEL          | Logging level 0, 1, or 2               |
-  |  Opt   | FARCASTER_FORCE_TCP                 | TRUE, Skip UDP connectivity                |
-  |  Opt   | FARCASTER_SKIP_CERT_VERIFY          | TRUE, Skip Certificate verification for testing HTTPS inspection (FW, CASB, etc.)                |
+  |  Opt   | FARCASTER_TRANSPORT                 | `auto` (default): UDP, then TCP, then WebSocket. `udp`, `tcp` or `ws` use only that transport. WebSocket requires `FARCASTER_AGENT_TOKEN`                |
+  |  Opt   | FARCASTER_WS_URL                    | WebSocket URL of the hub. Defaults to `wss://<hub host>/v1/wg`                |
+  |  Opt   | FARCASTER_FORCE_TCP                 | TRUE, same as `FARCASTER_TRANSPORT=tcp`                |
+  |  Opt   | FARCASTER_CUSTOM_CA                 | CA certificates (PEM file path or base64-encoded PEM) to trust in addition to the system CAs, such as an HTTPS-inspecting proxy's CA                |
+  |  Opt   | FARCASTER_SKIP_CERT_VERIFY          | TRUE, Skip certificate verification for the configuration download and the WebSocket transport. Prefer `FARCASTER_CUSTOM_CA`                |
   |  Opt   | HTTP_PROXY                    | Use the configured proxy address for all connections                |
 
  ### Additional Windows Options
@@ -168,6 +172,8 @@ Notes:
   | Opt |   --ipv6               | Enable IPv6/AAAA DNS query resolution
   | Opt |   -l, --log string     | Log file path. Log to stderr if not specified
   | Opt |   --proxy-names        | Use hostnames instead of IPs in proxy CONNECT/SOCKS5 requests
+  | Opt |   --transport string   | Hub transport: `auto`, `udp`, `tcp` or `ws`, as in `FARCASTER_TRANSPORT`
+  | Opt |   --ws-url string      | Override the hub's WebSocket URL, as in `FARCASTER_WS_URL`
   | Opt |   -v, --version        | Print the version and exit
 
  #### Windows Service Control
@@ -202,12 +208,13 @@ farcasterd service remove
   ### Unable to connect (UDP/443 or UDP & TCP/443)
   - If firewalls are not permitting UDP/443 outbound from the agent to the appropriate Farcaster hub, as well as the appropriate return traffic, the connection will fall back to TCP/443 and the agent will show "Connected over TCP" (with "UDP recommended") in the Snyk API & Web UI. Scans still run over TCP but can be slower, so UDP/443 is strongly recommended.
   - If firewalls are not permitting UDP/443 OR TCP/443 from the Agent to the Farcaster hub the agent will not be able to connect.
+  - On networks that allow only HTTPS, the agent connects with WebSocket over TLS to the hub hostname on TCP/443, through `HTTPS_PROXY` or `HTTP_PROXY` when set. In `auto` mode it tries WebSocket after UDP and TCP fail, about 35 seconds after starting in userspace mode and about 3.5 minutes in kernel mode; set `FARCASTER_TRANSPORT=ws` to connect at once.
   - In some cases protocol level firewall rules (e.g allow HTTPS protocol ONLY over TCP/443, allow QUIC protocol ONLY over UDP/443, or allow "Standard Protocols only") the initial UDP connection or the initial TCP handshake will be successful, but subsequent communications will be blocked as the traffic is not using standard protocols.  Protocol based rules should be disabled or set to allow the protocol identified by the firewall (typically wireguard) for Agent communications.
 
   Please refer to [network requirements](#network-requirements) for Agent connectivity requirements.
 
   ### Proxy Configuration 
-  The agent can use a proxy to connect to Snyk API & Web using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported. `ALL_PROXY` is honored for WebSocket connections (ws://, wss://) via the standard library HTTP transport, but not for raw TCP connections.
+  The agent can use a proxy to connect to Snyk API & Web using standard environment variables. The agent honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` for outbound connections. HTTPS proxies are supported.
 
   ### Performance Issues
 While the agent can use an HTTP/S proxy or a direct TCP connection to Snyk API & Web, this can cause poor network performance. For more information, see this article about the [TCP Meltdown](https://web.archive.org/web/20220103191127/http://sites.inka.de/bigred/devel/tcp-tcp.html) problem. We **strongly recommend** that you allow the agent to connect to `54.247.135.113`,  `44.212.186.140`, and `54.253.10.194` on `UDP` port `443`.

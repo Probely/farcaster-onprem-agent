@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/sys/windows/svc"
+	"probely.com/farcaster/agent"
 	"probely.com/farcaster/config"
 	"probely.com/farcaster/osutils"
 	"probely.com/farcaster/settings"
@@ -152,6 +154,14 @@ var installCmd = &cobra.Command{
 		}
 		if appCfg.ipv6 {
 			svcArgs = append(svcArgs, "--ipv6")
+		}
+		// Save explicit defaults too, so they override the machine environment
+		// when the service starts.
+		if t := appCfg.conn.Transport; t != agent.TransportAuto || strings.TrimSpace(appCfg.transport) != "" {
+			svcArgs = append(svcArgs, "--transport", string(t))
+		}
+		if appCfg.conn.WSURL != "" || cmd.Flags().Changed("ws-url") {
+			svcArgs = append(svcArgs, "--ws-url", appCfg.conn.WSURL)
 		}
 
 		if err := winsvc.Install(settings.ServiceName, settings.Description, svcArgs); err != nil {

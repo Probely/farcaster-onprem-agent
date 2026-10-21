@@ -90,6 +90,10 @@ determine_run_mode() {
         echo "Make sure this container has the NET_ADMIN capability and iptables is installed."
         export RUN_MODE="--user"
     fi
+    if [ "${FARCASTER_TRANSPORT}" = "ws" ]; then
+        echo "The WebSocket transport runs in userspace mode."
+        export RUN_MODE="--user"
+    fi
     echo "Determined run mode: ${RUN_MODE#--}"
 }
 
@@ -110,6 +114,9 @@ init_environment
 # shellcheck source=_lib.sh
 . "${FARCASTER_PATH}/bin/_lib.sh"
 
+FARCASTER_TRANSPORT=$(resolve_transport) || exit 1
+export FARCASTER_TRANSPORT
+echo "Transport: ${FARCASTER_TRANSPORT}"
 determine_run_mode
 if [ "${RUN_MODE}" == "--user" ]; then
   start_user_mode

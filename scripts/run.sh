@@ -31,7 +31,6 @@ UDP2TCP_PORT=8443
 
 # The WireGuard protocol requires the client to handshake at most 180 seconds apart
 MAX_WG_HANDSHAKE_TTL=190
-FARCASTER_FORCE_TCP=${FARCASTER_FORCE_TCP:-0}
 FARCASTER_PROXY_NAMES=${FARCASTER_PROXY_NAMES:-FARCASTER_PROXY_USE_HOSTNAMES}
 DISABLE_FIREWALL=$(echo "${DISABLE_FIREWALL:-}" | tr '[:upper:]' '[:lower:]')
 
@@ -45,6 +44,10 @@ if [ -z "${IPT_CMD}" ]; then
 	echo "Could not run iptables. Make sure this container has the NET_ADMIN capability."
 	exit 1
 fi
+
+# entrypoint.sh starts the userspace agent whenever this script exits.
+save_iptables
+trap teardown_kernel_mode EXIT
 
 function download_and_deploy_v2_config() {
 	echo -ne "Deploying agent configuration\t... "
@@ -92,7 +95,7 @@ if ! HUB_HOST="$(wg_get_endpoint "${WG_TUN_IF}")"; then
 fi
 
 function proxy_warning() {
-	if [ "${HTTP_PROXY}" = "" ]; then
+	if [ -z "${HTTP_PROXY:-}" ]; then
 		echo -n "If an HTTP proxy is required to reach "
 		echo -n "external endpoints, please set the "
 		echo "HTTP_PROXY environment variable."
@@ -124,9 +127,12 @@ if ! start_proxy_maybe "${TCP_PROXY_PORT}"; then
 fi
 echo "done"
 
+# FARCASTER_TRANSPORT is resolved and exported by entrypoint.sh. Transport
+# failures fall back to the userspace agent without dump_log's pause.
+FARCASTER_TRANSPORT=${FARCASTER_TRANSPORT:-$(resolve_transport)}
 CONNECTED_UDP=0
 echo -ne "Connecting to Probely (via UDP)\t... "
-if [ "${FARCASTER_FORCE_TCP}" = "0" ]; then
+if [ "${FARCASTER_TRANSPORT}" = "auto" ] || [ "${FARCASTER_TRANSPORT}" = "udp" ]; then
 	if wg_start "${WG_TUN_IF}"; then
 		if [ "$(wg_get_latest_handshake "${WG_TUN_IF}")" != "0" ]; then
 			CONNECTED_UDP=1
@@ -139,6 +145,13 @@ else
 	echo "skipped"
 fi
 
+if [ "${CONNECTED_UDP}" = "0" ] && [ "${FARCASTER_TRANSPORT}" = "udp" ]; then
+	echo
+	echo "Could not connect over UDP."
+	dump_log "${LOG_FILE}" 0
+	exit 1
+fi
+
 UDP2TCP_PID=0
 if [ "${CONNECTED_UDP}" = "0" ]; then
 	echo -ne "Configuring fallback TCP tunnel\t... "
@@ -148,7 +161,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 		echo
 		echo "Could not start fallback TCP tunnel."
 		proxy_warning
-		dump_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}" 0
 		exit 1
 	fi
 	echo "done"
@@ -162,7 +175,7 @@ if [ "${CONNECTED_UDP}" = "0" ]; then
 		echo
 		echo "Could not establish TCP tunnel."
 		proxy_warning
-		dump_log "${LOG_FILE}"
+		dump_log "${LOG_FILE}" 0
 		exit 1
 	fi
 	echo "done"

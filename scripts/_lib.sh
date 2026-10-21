@@ -6,6 +6,7 @@ set -euo pipefail
 # Matches: [protocol://][user:pass@][host|[ipv6]][:port][/path]
 PROXY_REGEXP='^(https?://)?(([^@/:]+:[^@/:]+)@)?((\[[0-9a-fA-F:]+\])|([0-9a-zA-Z._-]+))(:[0-9]+)?(/.*)?$'
 WORKDIR=/run/farcaster
+IPT_SNAPSHOT="${WORKDIR}/iptables.rules"
 LOGDIR=/logs
 HUB_IP_TTL=300
 WG_DEFAULT_PORT=51820
@@ -20,6 +21,60 @@ check_iptables() {
 		return 0
 	fi
 	return 1
+}
+
+save_iptables() {
+	# Record the filter and nat tables before kernel mode adds rules. Naming
+	# each table records it even before it exists, so a restore resets both.
+	{ "${IPT_CMD}-save" -t filter && "${IPT_CMD}-save" -t nat; } > "${IPT_SNAPSHOT}"
+}
+
+teardown_kernel_mode() (
+	# Stop the kernel tunnel and gateway with their helper processes, and
+	# restore the rules recorded by save_iptables, before entrypoint.sh
+	# falls back to the userspace agent. Safe to run more than once.
+	set +e
+	for iface in "${WG_GW_IF}" "${WG_TUN_IF}"; do
+		ip link show dev "${iface}" >/dev/null 2>&1 && wg_stop "${iface}"
+	done
+	read -ra pids <<< "$(pidof udp2tcp moproxy dnsmasq)"
+	[ "${#pids[@]}" -gt 0 ] && kill "${pids[@]}"
+	[ -f "${IPT_SNAPSHOT}" ] && "${IPT_CMD}-restore" < "${IPT_SNAPSHOT}"
+	return 0
+)
+
+is_true() {
+	# Return 0 if $1 is 1, t, true, y, yes or on, in any case, like farcasterd.
+	local value="${1:-}"
+	value="${value//[[:space:]]/}"
+	value=$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')
+	case "${value}" in
+		1|t|true|y|yes|on) return 0 ;;
+	esac
+	return 1
+}
+
+resolve_transport() {
+	# Print FARCASTER_TRANSPORT in lowercase, else tcp if FARCASTER_FORCE_TCP
+	# is true, else auto, like farcasterd.
+	local transport="${FARCASTER_TRANSPORT:-}"
+	transport="${transport//[[:space:]]/}"
+	transport=$(printf '%s' "${transport}" | tr '[:upper:]' '[:lower:]')
+	if [ -z "${transport}" ]; then
+		if is_true "${FARCASTER_FORCE_TCP:-}"; then
+			echo "tcp"
+		else
+			echo "auto"
+		fi
+		return 0
+	fi
+	case "${transport}" in
+		auto|udp|tcp|ws) echo "${transport}" ;;
+		*)
+			echo "Unknown FARCASTER_TRANSPORT ${FARCASTER_TRANSPORT}. Use auto, udp, tcp or ws." >&2
+			return 1
+			;;
+	esac
 }
 
 wg_setup_iface() {
@@ -477,12 +532,14 @@ scrub_secrets() {
 }
 
 function dump_log() {
+	# Usage: dump_log <log file> [pause]. Pause defaults to 120 seconds.
 	set +e
 	echo
 	echo
 	echo
 
 	log_file="${1}"
+	pause="${2:-120}"
 	if ! [[ "${log_file}" =~ ^/dev/|^/proc/ ]]; then
 		# Clean up secrets from the log file.
 		local content
@@ -509,7 +566,7 @@ function dump_log() {
 	echo "===================================================================="
 	echo
 
-	sleep 120
+	sleep "${pause}"
 }
 
 function print_diagnostics() {

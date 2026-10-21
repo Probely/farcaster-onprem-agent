@@ -22,6 +22,8 @@ services:
       - FARCASTER_AGENT_TOKEN
       - FARCASTER_API_URL
       - FARCASTER_FORCE_TCP
+      - FARCASTER_TRANSPORT
+      - FARCASTER_WS_URL
     cap_add:
       - ${NET_ADMIN:-SETUID}
     volumes:

@@ -2,17 +2,23 @@ package wireguard
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/conn"
@@ -24,6 +30,14 @@ var (
 	hubIP   = netip.MustParseAddr("10.0.0.2")
 )
 
+// streamBridge relays stream connections to the hub's UDP socket.
+type streamBridge interface {
+	// reset aborts every open connection with RST, simulating a
+	// bridge restart or a hub replacement.
+	reset()
+	setHub(netip.AddrPort)
+}
+
 // tcpUDPBridge emulates tcp2udp, relaying length-prefixed TCP frames to the
 // hub over a per-connection UDP socket.
 type tcpUDPBridge struct {
@@ -34,7 +48,7 @@ type tcpUDPBridge struct {
 	conns []*net.TCPConn
 }
 
-func startBridge(t *testing.T, hub netip.AddrPort) *tcpUDPBridge {
+func startTCPBridge(t *testing.T, hub netip.AddrPort) *tcpUDPBridge {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -93,8 +107,6 @@ func serveBridge(c *net.TCPConn, hub *net.UDPAddr) {
 
 func (b *tcpUDPBridge) addr() string { return b.ln.Addr().String() }
 
-// reset aborts every open TCP connection with RST, simulating a hub restart or
-// replacement.
 func (b *tcpUDPBridge) reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -114,6 +126,93 @@ func (b *tcpUDPBridge) setHub(hub netip.AddrPort) {
 func (b *tcpUDPBridge) close() {
 	b.ln.Close()
 	b.reset()
+}
+
+// wsUDPBridge emulates the hub's WebSocket bridge, relaying binary messages
+// to the hub over a per-connection UDP socket.
+type wsUDPBridge struct {
+	srv *httptest.Server
+
+	mu    sync.Mutex
+	hub   *net.UDPAddr
+	conns []net.Conn // Hijacked TLS connections.
+}
+
+func startWSBridge(t *testing.T, hub netip.AddrPort) *wsUDPBridge {
+	t.Helper()
+	b := &wsUDPBridge{hub: net.UDPAddrFromAddrPort(hub)}
+	b.srv = httptest.NewUnstartedServer(http.HandlerFunc(b.serve))
+	b.srv.Config.ConnState = func(c net.Conn, s http.ConnState) {
+		if s == http.StateHijacked {
+			b.mu.Lock()
+			b.conns = append(b.conns, c)
+			b.mu.Unlock()
+		}
+	}
+	b.srv.StartTLS()
+	t.Cleanup(func() {
+		b.reset()
+		b.srv.Close()
+	})
+	return b
+}
+
+func (b *wsUDPBridge) serve(w http.ResponseWriter, r *http.Request) {
+	ws, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = ws.CloseNow() }()
+	b.mu.Lock()
+	hub := b.hub
+	b.mu.Unlock()
+	udp, err := net.DialUDP("udp", nil, hub)
+	if err != nil {
+		return
+	}
+	defer udp.Close()
+	go func() {
+		defer udp.Close()
+		for {
+			_, p, err := ws.Read(context.Background())
+			if err != nil {
+				return
+			}
+			if _, err := udp.Write(p); err != nil {
+				return
+			}
+		}
+	}()
+	buf := make([]byte, maxDatagramSize)
+	for {
+		n, err := udp.Read(buf)
+		if err != nil {
+			return
+		}
+		if err := ws.Write(context.Background(), websocket.MessageBinary, buf[:n]); err != nil {
+			return
+		}
+	}
+}
+
+func (b *wsUDPBridge) url() *url.URL {
+	return &url.URL{Scheme: "wss", Host: b.srv.Listener.Addr().String(), Path: wsPath}
+}
+
+func (b *wsUDPBridge) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, c := range b.conns {
+		_ = c.(*tls.Conn).NetConn().(*net.TCPConn).SetLinger(0)
+		c.Close()
+	}
+	b.conns = nil
+}
+
+func (b *wsUDPBridge) setHub(hub netip.AddrPort) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.hub = net.UDPAddrFromAddrPort(hub)
 }
 
 func newKey(t *testing.T) (priv, pub []byte) {
@@ -211,45 +310,68 @@ func expectDelivery(t *testing.T, from, to *ChannelTUN, src, dst netip.Addr, pay
 	t.Fatalf("packet %q was never delivered", payload)
 }
 
-// TestTCPBindRecoversFromConnectionReset verifies that a WireGuard tunnel over
-// TCPBind restores bidirectional traffic after both a tcp2udp restart (where
-// the hub retains its session) and a hub replacement (which requires a new
-// handshake).
-func TestTCPBindRecoversFromConnectionReset(t *testing.T) {
-	agentPriv, agentPub := newKey(t)
-	hubPriv, hubPub := newKey(t)
-	hubDev, hubTun, hubAddr := hubDevice(t, hubPriv, agentPub)
-	bridge := startBridge(t, hubAddr)
-
-	src := netip.AddrPortFrom(agentIP, 51820)
-	bind, err := NewTCPBind(&src, bridge.addr(), bridge.addr(), zaptest.NewLogger(t).Sugar())
-	if err != nil {
-		t.Fatal(err)
+// TestStreamBindRecoversFromConnectionReset verifies that a WireGuard tunnel over
+// each stream transport restores bidirectional traffic after a bridge restart,
+// where the hub keeps its session. The TCP case also replaces the hub, which
+// requires a new handshake; that recovery runs in the transport-independent
+// StreamBind core.
+func TestStreamBindRecoversFromConnectionReset(t *testing.T) {
+	tests := []struct {
+		name       string
+		start      func(t *testing.T, hub, src netip.AddrPort) (streamBridge, conn.Bind, string)
+		replaceHub bool
+	}{
+		{"tcp", func(t *testing.T, hub, src netip.AddrPort) (streamBridge, conn.Bind, string) {
+			b := startTCPBridge(t, hub)
+			bind, err := NewTCPBind(&src, b.addr(), b.addr(), zaptest.NewLogger(t).Sugar())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return b, bind, b.addr()
+		}, true},
+		{"ws", func(t *testing.T, hub, src netip.AddrPort) (streamBridge, conn.Bind, string) {
+			b := startWSBridge(t, hub)
+			cfg := WSConfig{URL: b.url(), Dialer: &net.Dialer{}, TLSConfig: trusting(b.srv.Certificate())}
+			bind, err := NewWSBind(&src, b.url().Host, cfg, zaptest.NewLogger(t).Sugar())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return b, bind, b.url().Host
+		}, false},
 	}
-	agentTun := NewChannelTUN("agent", 1420)
-	agentCfg := fmt.Sprintf("private_key=%x\npublic_key=%x\nendpoint=%s\nallowed_ip=%s/32\npersistent_keepalive_interval=1\n",
-		agentPriv, hubPub, bridge.addr(), hubIP)
-	startDevice(t, "agent", agentTun, bind, agentCfg)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agentPriv, agentPub := newKey(t)
+			hubPriv, hubPub := newKey(t)
+			hubDev, hubTun, hubAddr := hubDevice(t, hubPriv, agentPub)
+			bridge, bind, endpoint := tt.start(t, hubAddr, netip.AddrPortFrom(agentIP, 51820))
 
-	roundTrip := func(step string) {
-		t.Helper()
-		expectDelivery(t, agentTun, hubTun, agentIP, hubIP, "agent to hub, "+step)
-		expectDelivery(t, hubTun, agentTun, hubIP, agentIP, "hub to agent, "+step)
+			agentTun := NewChannelTUN("agent", 1420)
+			agentCfg := fmt.Sprintf("private_key=%x\npublic_key=%x\nendpoint=%s\nallowed_ip=%s/32\npersistent_keepalive_interval=1\n",
+				agentPriv, hubPub, endpoint, hubIP)
+			startDevice(t, "agent", agentTun, bind, agentCfg)
+
+			roundTrip := func(step string) {
+				t.Helper()
+				expectDelivery(t, agentTun, hubTun, agentIP, hubIP, "agent to hub, "+step)
+				expectDelivery(t, hubTun, agentTun, hubIP, agentIP, "hub to agent, "+step)
+			}
+			roundTrip("initial")
+
+			bridge.reset()
+			roundTrip("after bridge restart")
+
+			if !tt.replaceHub {
+				return
+			}
+			if testing.Short() {
+				t.Skip("skipping the hub replacement, which waits for a WireGuard re-handshake")
+			}
+			hubDev.Close()
+			_, hubTun, hubAddr = hubDevice(t, hubPriv, agentPub)
+			bridge.setHub(hubAddr)
+			bridge.reset()
+			roundTrip("after hub replacement")
+		})
 	}
-	roundTrip("initial")
-
-	// A tcp2udp restart: the hub keeps its WireGuard sessions.
-	bridge.reset()
-	roundTrip("after bridge restart")
-
-	if testing.Short() {
-		t.Skip("skipping the hub replacement, which waits for a WireGuard re-handshake")
-	}
-
-	// A hub replacement: the new hub needs a fresh handshake.
-	hubDev.Close()
-	_, hubTun, hubAddr = hubDevice(t, hubPriv, agentPub)
-	bridge.setHub(hubAddr)
-	bridge.reset()
-	roundTrip("after hub replacement")
 }
