@@ -47,7 +47,7 @@ darwin:
 
 lint:
 	@command -v docker >/dev/null || { echo "You need Docker installed to run the linter" && exit 1; }
-	docker run --rm -v $(shell pwd):/app -w /app golangci/golangci-lint golangci-lint run -v
+	docker run --rm -v $(shell pwd):/app -w /app golangci/golangci-lint:v2.15.0 golangci-lint run -v
 
 docker: check-env
 	docker buildx build --builder multiarch -f Dockerfile \

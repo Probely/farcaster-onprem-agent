@@ -6,12 +6,12 @@ services:
     restart: unless-stopped
 
   httpproxy:
-    image: mitmproxy/mitmproxy:latest
+    image: mitmproxy/mitmproxy:12.3.0
     command: ["mitmdump", "--listen-host", "0.0.0.0", "--listen-port", "8080", "--mode", "regular", "--ssl-insecure"]
     restart: unless-stopped
 
   socks5proxy:
-    image: serjs/go-socks5-proxy:latest
+    image: serjs/go-socks5-proxy:v0.0.4
     environment:
       REQUIRE_AUTH: "false"
     restart: unless-stopped

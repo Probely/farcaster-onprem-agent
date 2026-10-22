@@ -14,9 +14,9 @@ jobs:
     name: Test & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: farcaster-go/go.mod
           cache-dependency-path: |
@@ -33,6 +33,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          version: v2.15.0
           working-directory: farcaster-go
           only-new-issues: true
 
@@ -40,9 +41,9 @@ jobs:
     name: Vulnerability Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: farcaster-go/go.mod
           cache-dependency-path: farcaster-go/go.sum

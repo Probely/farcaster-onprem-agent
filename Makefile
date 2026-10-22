@@ -5,7 +5,7 @@ LOCAL_PLATFORM := linux/$(shell uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64
 VERSION ?=
 VER_MAJOR := $(shell echo '$(VERSION)' | cut -d. -f1)
 VER_MINOR := $(shell echo '$(VERSION)' | cut -d. -f2)
-BINFMT_IMAGE ?= tonistiigi/binfmt
+BINFMT_IMAGE ?= tonistiigi/binfmt:qemu-v10.2.3
 BINFMT_CMD ?= docker run --rm --privileged $(BINFMT_IMAGE) --install all
 GO_MODULES := farcaster-go farconn contrib/proxyprobe
 SHELL_SCRIPTS := $(wildcard scripts/*.sh tests/shell/*.sh) \
@@ -25,9 +25,9 @@ BUILDX_ARGS := --builder multiarch \
 
 
 MODERN_BUILDX_ARGS = \
-	--build-arg RUST_BUILDER_BASE=rust:1-trixie \
-	--build-arg GO_BUILDER_BASE=golang:1.26-trixie \
-	--build-arg FINAL_BASE=debian:13.6-slim \
+	--build-arg RUST_BUILDER_BASE=rust:1.99.1-trixie \
+	--build-arg GO_BUILDER_BASE=golang:1.27.3-trixie \
+	--build-arg FINAL_BASE=debian:13.7-slim \
 	--build-arg GCC_VERSION=14
 
 .PHONY: all build build-local build-modern build-local-modern clean prepare check-version

@@ -20,7 +20,7 @@ services:
     stop_grace_period: 1s
 
   proxy:
-    image: debian:13-slim
+    image: debian:13.7-slim
     volumes:
       - shared-logs:/logs
     command:
@@ -36,7 +36,7 @@ services:
     stop_grace_period: 1s
 
   tcpdump:
-    image: alpine
+    image: alpine:3.24.3
     healthcheck:
       test: ["CMD", "pidof", "tcpdump"]
       interval: 10s

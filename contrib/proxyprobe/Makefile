@@ -41,7 +41,7 @@ vet: fmt
 
 lint:
 	@command -v docker >/dev/null || { echo "ERROR: Docker is required for linting" >&2; exit 1; }
-	docker run --rm -v $(CURDIR):/app -w /app golangci/golangci-lint golangci-lint run -v
+	docker run --rm -v $(CURDIR):/app -w /app golangci/golangci-lint:v2.15.0 golangci-lint run -v
 
 $(BIN_DIR)/$(NAME)-%: ${GOFILES}
 	@mkdir -p $(BIN_DIR)

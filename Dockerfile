@@ -1,5 +1,5 @@
-ARG RUST_BUILDER_BASE="rust:1-bookworm"
-ARG GO_BUILDER_BASE="golang:1.26-bookworm"
+ARG RUST_BUILDER_BASE="rust:1.99.1-bookworm"
+ARG GO_BUILDER_BASE="golang:1.27.3-bookworm"
 ARG FINAL_BASE="debian:12.15-slim"
 ARG GCC_VERSION="12"
 

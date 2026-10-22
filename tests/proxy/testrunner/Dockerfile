@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm as build
+FROM golang:1.27.3-bookworm as build
 WORKDIR /src
 COPY . .
 # Run tests within module so imports resolve
