@@ -290,7 +290,9 @@ func (c *FarcasterConfig) resolveEndpoint(peer *Peer) error {
 
 	// Successfully resolved with default resolver
 	if err == nil && len(netipAddrs) > 0 {
-		peer.Endpoint = net.JoinHostPort(netipAddrs[0].String(), port)
+		// Go's resolver returns /etc/hosts entries as IPv4-mapped IPv6 addresses;
+		// WireGuard sends to the unmapped address over its IPv4 socket.
+		peer.Endpoint = net.JoinHostPort(netipAddrs[0].Unmap().String(), port)
 		return nil
 	}
 
