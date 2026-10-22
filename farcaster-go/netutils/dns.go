@@ -5,11 +5,13 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"time"
 
+	"github.com/miekg/dns"
 	"probely.com/farcaster/tlsconfig"
 )
 
@@ -69,18 +71,28 @@ func LookupNetIPDoH(ctx context.Context, network, host string) ([]netip.Addr, er
 		return nil, fmt.Errorf("received non-OK HTTP status: %s", resp.Status)
 	}
 
+	return decodeAddrs(resp.Body)
+}
+
+// decodeAddrs returns the addresses in the A and AAAA records of a DoH JSON
+// response. An answer for an alias also lists its CNAME records.
+func decodeAddrs(body io.Reader) ([]netip.Addr, error) {
 	var dnsResp struct {
 		Answer []struct {
+			Type uint16 `json:"type"`
 			Data string `json:"data"`
 		} `json:"Answer"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&dnsResp); err != nil {
+	if err := json.NewDecoder(body).Decode(&dnsResp); err != nil {
 		return nil, fmt.Errorf("failed to decode JSON response: %w", err)
 	}
 
 	var addrs []netip.Addr
 	for _, ans := range dnsResp.Answer {
+		if ans.Type != dns.TypeA && ans.Type != dns.TypeAAAA {
+			continue
+		}
 		addr, err := netip.ParseAddr(ans.Data)
 		if err != nil {
 			return nil, fmt.Errorf("invalid IP address in DNS response: %w", err)
