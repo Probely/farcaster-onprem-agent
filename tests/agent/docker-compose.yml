@@ -32,7 +32,7 @@ services:
     stop_grace_period: 1s
 
   network:
-    image: debian:13-slim
+    image: debian:13.7-slim
     environment:
       - NET_MODE
     command:
@@ -79,7 +79,7 @@ services:
     stop_grace_period: 1s
 
   tcp_proxy:
-    image: debian:13-slim
+    image: debian:13.7-slim
     volumes:
       - shared-logs:/logs
     command:
