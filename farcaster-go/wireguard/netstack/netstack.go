@@ -73,7 +73,7 @@ type netstack struct {
 	proxyUseNames bool
 
 	// Dialer.
-	dialer dialers.Dialer
+	dialer *dialers.TCPProxyDialer
 }
 
 func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (_ *netstack, err error) {

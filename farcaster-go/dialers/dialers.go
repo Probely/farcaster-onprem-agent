@@ -107,14 +107,24 @@ func (d *TCPProxyDialer) initProxyHosts() {
 
 // Dial connects to the address on the named network.
 func (d *TCPProxyDialer) Dial(network, addr string) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), d.timeout)
-	defer cancel()
-	return d.DialContext(ctx, network, addr)
+	return d.DialContext(context.Background(), network, addr)
 }
 
-// DialContext connects to the address on the named network. ctx bounds the
-// entire dial, including any proxy handshake.
+// DialContext connects to the address on the named network. The configured
+// timeout and ctx bound the dial, including any proxy handshake.
 func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return d.DialContextWithAuthority(ctx, network, addr, addr)
+}
+
+// DialContextWithAuthority connects directly to addr or sends authority to a
+// proxy. Proxy exclusions apply to both addresses. The configured timeout and
+// ctx bound the dial, including any proxy handshake.
+func (d *TCPProxyDialer) DialContextWithAuthority(ctx context.Context, network, addr, authority string) (net.Conn, error) {
+	if d.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.timeout)
+		defer cancel()
+	}
 	// Only handle TCP connections for proxy.
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
 		// For non-TCP, use direct connection.
@@ -123,9 +133,18 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 	}
 
 	// Determine if we should use a proxy.
-	proxyURL, err := d.proxyFunc(addr)
+	proxyURL, err := d.proxyFunc(authority)
 	if err != nil {
 		return nil, fmt.Errorf("proxy resolution failed: %w", err)
+	}
+	if proxyURL != nil && authority != addr {
+		byIP, err := d.proxyFunc(addr)
+		if err != nil {
+			return nil, fmt.Errorf("proxy resolution failed: %w", err)
+		}
+		if byIP == nil {
+			proxyURL = nil
+		}
 	}
 	// If no proxy is configured, use direct connection.
 	if proxyURL == nil {
@@ -134,37 +153,33 @@ func (d *TCPProxyDialer) DialContext(ctx context.Context, network, addr string) 
 		return dialer.DialContext(ctx, network, addr)
 	}
 
-	targetHost := addr
-	if h, _, e := net.SplitHostPort(addr); e == nil {
-		targetHost = h
-	}
 	// If destination host matches a known proxy hostname or IP, bypass proxy.
-	if d.proxyHosts[strings.ToLower(targetHost)] {
-		d.log.Debugf("proxy: direct (target is proxy host) addr=%s", addr)
-		dialer := &net.Dialer{}
-		return dialer.DialContext(ctx, network, addr)
+	for _, target := range []string{addr, authority} {
+		host, _, err := net.SplitHostPort(target)
+		if err == nil && d.proxyHosts[strings.ToLower(host)] {
+			d.log.Debugf("proxy: direct (target is proxy host) addr=%s", addr)
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
 	}
 
 	proxyURL = withDefaultPort(proxyURL)
-	d.log.Debugf("proxy: via %s addr=%s NO_PROXY=%q", proxyURL.Redacted(), addr, os.Getenv("NO_PROXY"))
+	d.log.Debugf("proxy: via %s addr=%s NO_PROXY=%q", proxyURL.Redacted(), authority, os.Getenv("NO_PROXY"))
 
 	// Route through appropriate proxy type.
 	switch proxyURL.Scheme {
 	case "http", "https":
 		pd := &httpProxyDialer{
 			proxyURL: proxyURL,
-			timeout:  d.timeout,
 		}
 		if proxyURL.User != nil {
 			pd.auth = generateProxyAuth(proxyURL.User)
 		}
-		return pd.dialContext(ctx, network, addr)
+		return pd.dialContext(ctx, network, authority)
 	case "socks5", "socks5h":
 		pd := &socks5ProxyDialer{
 			proxyURL: proxyURL,
-			timeout:  d.timeout,
 		}
-		return pd.dialContext(ctx, network, addr)
+		return pd.dialContext(ctx, network, authority)
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
 	}

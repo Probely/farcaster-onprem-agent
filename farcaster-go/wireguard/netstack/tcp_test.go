@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"probely.com/farcaster/dialers"
+	"probely.com/farcaster/ipnamecache"
 	"probely.com/farcaster/tlsconfig"
 )
 
@@ -180,7 +181,7 @@ func TestDialUpstreamThroughProxy(t *testing.T) {
 			ns := &netstack{dialer: dialers.NewTCPProxyDialerWithProxyFunc(testWait,
 				func(string) (*url.URL, error) { return proxyURL, nil }, nil)}
 
-			up, err := ns.dialUpstream(t.Context(), target)
+			up, err := ns.dialUpstream(t.Context(), target, target)
 			if err != nil {
 				t.Fatalf("dialUpstream: %v", err)
 			}
@@ -218,7 +219,7 @@ func TestDialUpstreamCloseStalledHTTPSProxy(t *testing.T) {
 	}))
 	ns := &netstack{dialer: dialers.NewTCPProxyDialerWithProxyFunc(testWait,
 		func(string) (*url.URL, error) { return proxyURL, nil }, nil)}
-	up, err := ns.dialUpstream(t.Context(), "192.0.2.10:443")
+	up, err := ns.dialUpstream(t.Context(), "192.0.2.10:443", "192.0.2.10:443")
 	if err != nil {
 		t.Fatalf("dialUpstream: %v", err)
 	}
@@ -250,5 +251,49 @@ func TestDialUpstreamCloseStalledHTTPSProxy(t *testing.T) {
 	}
 	if err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestDialUpstreamPreservesDirectIP(t *testing.T) {
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"} {
+		t.Setenv(key, "")
+	}
+	for _, exclude := range []string{"ip", "hostname"} {
+		t.Run(exclude, func(t *testing.T) {
+			target := netip.MustParseAddrPort(replyAfterEOFServer(t))
+			cache, err := ipnamecache.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cache.UpdateOne(target.Addr(), "target.invalid")
+			ns := &netstack{ipCache: cache}
+			addr, authority := ns.dialAddresses(target.Addr(), target.Port())
+			excluded := addr
+			if exclude == "hostname" {
+				excluded = authority
+			}
+			ns.dialer = dialers.NewTCPProxyDialerWithProxyFunc(testWait,
+				func(address string) (*url.URL, error) {
+					if address == excluded {
+						return nil, nil
+					}
+					return &url.URL{Scheme: "http", Host: "127.0.0.1:1"}, nil
+				}, nil)
+			conn, err := ns.dialUpstream(t.Context(), addr, authority)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			if _, err := io.WriteString(conn, "ping"); err != nil {
+				t.Fatal(err)
+			}
+			if err := conn.CloseWrite(); err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(conn)
+			if err != nil || string(got) != "pong:ping" {
+				t.Fatalf("reply = %q, %v; want pong:ping", got, err)
+			}
+		})
 	}
 }

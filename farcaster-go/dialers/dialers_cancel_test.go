@@ -49,16 +49,20 @@ func waitGoroutines(t *testing.T, limit int) {
 func TestTCPProxyDialerStalledProxy(t *testing.T) {
 	const dialTimeout = 50 * time.Millisecond
 	tests := []struct {
-		name    string
-		scheme  string
-		useCtx  bool // Call DialContext with a deadline; otherwise rely on Dial's timeout.
-		timeout time.Duration
+		name           string
+		scheme         string
+		useCtx         bool
+		timeout        time.Duration
+		contextTimeout time.Duration
 	}{
-		{"https context", "https", true, time.Minute},
-		{"http context", "http", true, time.Minute},
-		{"socks5 context", "socks5", true, time.Minute},
-		{"https timeout", "https", false, dialTimeout},
-		{"socks5 timeout", "socks5", false, dialTimeout},
+		{"https context", "https", true, time.Minute, dialTimeout},
+		{"http context", "http", true, time.Minute, dialTimeout},
+		{"socks5 context", "socks5", true, time.Minute, dialTimeout},
+		{"https timeout", "https", false, dialTimeout, 0},
+		{"socks5 timeout", "socks5", false, dialTimeout, 0},
+		{"https configured timeout", "https", true, dialTimeout, 2 * time.Second},
+		{"http configured timeout", "http", true, dialTimeout, 2 * time.Second},
+		{"socks5 configured timeout", "socks5", true, dialTimeout, 2 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -72,7 +76,7 @@ func TestTCPProxyDialerStalledProxy(t *testing.T) {
 				var c net.Conn
 				var err error
 				if tt.useCtx {
-					ctx, cancel := context.WithTimeout(t.Context(), dialTimeout)
+					ctx, cancel := context.WithTimeout(t.Context(), tt.contextTimeout)
 					defer cancel()
 					c, err = d.DialContext(ctx, "tcp", "192.0.2.10:443")
 				} else {

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"probely.com/farcaster/tlsconfig"
 )
@@ -18,7 +17,6 @@ import (
 // httpProxyDialer handles HTTP/HTTPS proxy connections using CONNECT.
 type httpProxyDialer struct {
 	proxyURL *url.URL
-	timeout  time.Duration
 	auth     string
 }
 
