@@ -74,7 +74,7 @@ type netstack struct {
 	dialer dialers.Dialer
 }
 
-func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (*netstack, error) {
+func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (_ *netstack, err error) {
 	if logger == nil {
 		return nil, errors.New("nil logger")
 	}
@@ -92,6 +92,12 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 		HandleLocal: false,
 	}
 	s := stack.New(sopts)
+	defer func() {
+		if err != nil {
+			s.Close()
+			s.Wait()
+		}
+	}()
 
 	// Enable SACK.
 	sackon := tcpip.TCPSACKEnabled(true)
