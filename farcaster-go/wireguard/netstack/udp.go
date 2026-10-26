@@ -8,13 +8,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miekg/dns"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// maxUDPPacketSize limits each forwarding buffer to 2KiB. Larger datagrams
+// may be truncated or rejected, breaking protocols that require them.
+// TODO(poupas): revisit large datagrams with buffers acquired on read readiness.
 const maxUDPPacketSize = 2048
+
+// maxUDPFlows bounds active UDP sessions, including DNS. Each session uses
+// up to 4KiB for forwarding or DNS query buffers, totaling up to 256MiB.
+// The pool can retain returned buffers; socket queues and other overhead
+// are additional.
+const maxUDPFlows = 65536
 
 // bufferPool reuses per-packet buffers to avoid per-packet allocations
 // during high-throughput UDP forwarding. Pointers are pooled because
@@ -67,22 +77,33 @@ func (t *idleTimer) fire() { t.once.Do(func() { close(t.done) }) }
 
 // handleUDP dispatches an inbound UDP forwarder request. Returning false
 // leaves the packet unhandled, allowing an ICMP port-unreachable response.
+// An endpoint creation failure consumes the packet without an ICMP reply.
 func (ns *netstack) handleUDP(r *udp.ForwarderRequest) bool {
 	if ns.ctx.Err() != nil {
+		return false
+	}
+	if n := ns.udpFlows.Add(1); n > maxUDPFlows {
+		ns.udpFlows.Add(-1)
+		ns.log.Warnf("UDP flow limit reached: %d", maxUDPFlows)
 		return false
 	}
 	// Register the flow before returning so subsequent datagrams
 	// reach this endpoint.
 	downstream, err := ns.acceptUDP(r)
 	if err != nil {
+		ns.udpFlows.Add(-1)
 		ns.logConnectionError(err, "Downstream UDP accept failed")
 		return true
 	}
-	if r.ID().LocalPort == 53 {
-		go ns.handleDNSUDP(downstream)
-		return true
-	}
-	go ns.forwardUDP(downstream, r.ID())
+	id := r.ID()
+	go func() {
+		defer ns.udpFlows.Add(-1)
+		if id.LocalPort == 53 {
+			ns.handleDNSUDP(downstream)
+			return
+		}
+		ns.forwardUDP(downstream, id)
+	}()
 	return true
 }
 
@@ -174,8 +195,8 @@ func (ns *netstack) copyUDP(done chan<- struct{}, idle *idleTimer, dir string, d
 func (ns *netstack) handleDNSUDP(downstream *gonet.UDPConn) {
 	defer downstream.Close()
 
-	q := getBuffer()
-	defer putBuffer(q)
+	// Limit retained query buffers to 4KiB; larger queries may be truncated.
+	q := make([]byte, dns.DefaultMsgSize)
 
 	for {
 		if err := downstream.SetReadDeadline(time.Now().Add(dnsIdleTimeout)); err != nil {

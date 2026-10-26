@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -57,7 +58,8 @@ type netstack struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	once sync.Once
+	once     sync.Once
+	udpFlows atomic.Int64
 
 	log *zap.SugaredLogger
 
