@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -65,32 +66,33 @@ func (t *idleTimer) Done() <-chan struct{} { return t.done }
 func (t *idleTimer) fire() { t.once.Do(func() { close(t.done) }) }
 
 // handleUDP dispatches an inbound UDP forwarder request. Returning false
-// causes the netstack forwarder to drop the packet.
+// leaves the packet unhandled, allowing an ICMP port-unreachable response.
 func (ns *netstack) handleUDP(r *udp.ForwarderRequest) bool {
 	if ns.ctx.Err() != nil {
 		return false
 	}
-	if r.ID().LocalPort == 53 {
-		go ns.handleDNSUDP(r)
+	// Register the flow before returning so subsequent datagrams
+	// reach this endpoint.
+	downstream, err := ns.acceptUDP(r)
+	if err != nil {
+		ns.logConnectionError(err, "Downstream UDP accept failed")
 		return true
 	}
-	go ns.forwardUDP(r)
+	if r.ID().LocalPort == 53 {
+		go ns.handleDNSUDP(downstream)
+		return true
+	}
+	go ns.forwardUDP(downstream, r.ID())
 	return true
 }
 
 // forwardUDP proxies a single UDP "session" between a downstream netstack
 // peer and an upstream server.
-func (ns *netstack) forwardUDP(r *udp.ForwarderRequest) {
-	downstream, err := ns.acceptUDP(r)
-	if err != nil {
-		ns.logConnectionError(err, "Downstream UDP accept failed")
-		return
-	}
+func (ns *netstack) forwardUDP(downstream *gonet.UDPConn, id stack.TransportEndpointID) {
 	defer downstream.Close()
 
-	cr := r.ID()
-	raddr := netip.AddrPortFrom(parseIPv4(cr.LocalAddress), cr.LocalPort)
-	upstream, err := ns.dialUpstreamUDP(cr.RemotePort, raddr)
+	raddr := netip.AddrPortFrom(parseIPv4(id.LocalAddress), id.LocalPort)
+	upstream, err := ns.dialUpstreamUDP(id.RemotePort, raddr)
 	if err != nil {
 		ns.logConnectionError(err, "Upstream UDP dial failed")
 		return
@@ -169,12 +171,7 @@ func (ns *netstack) copyUDP(done chan<- struct{}, idle *idleTimer, dir string, d
 
 // handleDNSUDP serves DNS queries over a UDP "session" by forwarding
 // them to the local resolver instead of dialing an upstream server.
-func (ns *netstack) handleDNSUDP(r *udp.ForwarderRequest) {
-	downstream, err := ns.acceptUDP(r)
-	if err != nil {
-		ns.log.Debug("Downstream DNS UDP accept failed:", err)
-		return
-	}
+func (ns *netstack) handleDNSUDP(downstream *gonet.UDPConn) {
 	defer downstream.Close()
 
 	q := getBuffer()
