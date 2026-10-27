@@ -192,6 +192,8 @@ func (ns *netstack) copyUDP(done chan<- struct{}, idle *idleTimer, dir string, d
 
 // handleDNSUDP serves DNS queries over a UDP "session" by forwarding
 // them to the local resolver instead of dialing an upstream server.
+// Queries run sequentially per flow, so upstream timeouts also delay queued
+// queries.
 func (ns *netstack) handleDNSUDP(downstream *gonet.UDPConn) {
 	defer downstream.Close()
 
