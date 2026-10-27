@@ -59,6 +59,7 @@ func (t *TUN) Read(packets [][]byte, sizes []int, offset int) (int, error) {
 	if !ok {
 		return 0, os.ErrClosed
 	}
+	defer pkt.Release()
 	n, err := pkt.Read(packets[0][offset:])
 	if err != nil {
 		return 0, err
@@ -108,6 +109,7 @@ func (t *TUN) Close() error {
 	}
 
 	t.closed = true
+	close(t.events)
 	t.mu.Unlock()
 
 	// Tear down the network stack.

@@ -19,6 +19,7 @@ import (
 // the CONNECT response remain readable on the returned connection.
 func TestHTTPProxyDialerKeepsBytesAfterResponse(t *testing.T) {
 	const banner = "SSH-2.0-test\r\n"
+	const authority = "target.example:22"
 	tests := []struct {
 		name  string
 		start func(*httptest.Server)
@@ -29,6 +30,10 @@ func TestHTTPProxyDialerKeepsBytesAfterResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodConnect || r.Host != authority {
+					http.Error(w, "unexpected CONNECT authority", http.StatusBadRequest)
+					return
+				}
 				c, _, err := http.NewResponseController(w).Hijack()
 				if err != nil {
 					return
@@ -50,7 +55,7 @@ func TestHTTPProxyDialerKeepsBytesAfterResponse(t *testing.T) {
 			}
 			d := NewTCPProxyDialerWithProxyFunc(5*time.Second, func(string) (*url.URL, error) { return proxyURL, nil }, nil)
 
-			c, err := d.DialContext(t.Context(), "tcp", "192.0.2.10:22")
+			c, err := d.DialContextWithAuthority(t.Context(), "tcp", "192.0.2.10:22", authority)
 			if err != nil {
 				t.Fatalf("DialContext: %v", err)
 			}

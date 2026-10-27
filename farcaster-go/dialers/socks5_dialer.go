@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"time"
 
 	"golang.org/x/net/proxy"
 )
@@ -13,7 +12,6 @@ import (
 // socks5ProxyDialer handles SOCKS5 proxy connections.
 type socks5ProxyDialer struct {
 	proxyURL *url.URL
-	timeout  time.Duration
 }
 
 func (d *socks5ProxyDialer) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {

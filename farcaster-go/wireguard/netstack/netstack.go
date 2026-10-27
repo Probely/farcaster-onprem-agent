@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -57,7 +58,8 @@ type netstack struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	once sync.Once
+	once     sync.Once
+	udpFlows atomic.Int64
 
 	log *zap.SugaredLogger
 
@@ -71,10 +73,10 @@ type netstack struct {
 	proxyUseNames bool
 
 	// Dialer.
-	dialer dialers.Dialer
+	dialer *dialers.TCPProxyDialer
 }
 
-func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (*netstack, error) {
+func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool, proxyUseNames bool) (_ *netstack, err error) {
 	if logger == nil {
 		return nil, errors.New("nil logger")
 	}
@@ -92,6 +94,12 @@ func newNetstack(ip netip.Addr, mtu int, logger *zap.SugaredLogger, useIPv6 bool
 		HandleLocal: false,
 	}
 	s := stack.New(sopts)
+	defer func() {
+		if err != nil {
+			s.Close()
+			s.Wait()
+		}
+	}()
 
 	// Enable SACK.
 	sackon := tcpip.TCPSACKEnabled(true)

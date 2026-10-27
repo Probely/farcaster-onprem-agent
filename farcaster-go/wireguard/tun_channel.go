@@ -82,6 +82,7 @@ func (c *ChannelTUN) Write(packets [][]byte, offset int) (int, error) {
 	if offset == -1 {
 		c.once.Do(func() {
 			close(c.Closed)
+			close(c.events)
 		})
 		return 0, io.EOF
 	}

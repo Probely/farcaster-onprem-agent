@@ -53,9 +53,9 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 	}()
 
 	cr := r.ID()
-	addr := ns.dialAddr(parseIPv4(cr.LocalAddress), cr.LocalPort)
+	addr, authority := ns.dialAddresses(parseIPv4(cr.LocalAddress), cr.LocalPort)
 
-	upstream, err := ns.dialUpstream(ns.ctx, addr)
+	upstream, err := ns.dialUpstream(ns.ctx, addr, authority)
 	if err != nil {
 		ns.logConnectionError(err, "Upstream dial failed")
 		return
@@ -75,8 +75,8 @@ func (ns *netstack) forwardTCP(r *tcp.ForwarderRequest) {
 
 // dialUpstream dials the real server with the proxy-aware dialer and
 // enables TCP keepalives on the underlying TCP connection.
-func (ns *netstack) dialUpstream(ctx context.Context, addr string) (halfCloser, error) {
-	conn, err := ns.dialer.DialContext(ctx, "tcp", addr)
+func (ns *netstack) dialUpstream(ctx context.Context, addr, authority string) (halfCloser, error) {
+	conn, err := ns.dialer.DialContextWithAuthority(ctx, "tcp", addr, authority)
 	if err != nil {
 		return nil, err
 	}
@@ -127,22 +127,22 @@ func (ns *netstack) acceptDownstream(r *tcp.ForwarderRequest) (*gonet.TCPConn, e
 		return nil, err
 	}
 	r.Complete(false)
-	ep.SocketOptions().SetDelayOption(true)
+	// SetDelayOption is the inverse of TCP_NODELAY: false disables Nagle,
+	// matching the upstream Go TCP connection's default.
+	ep.SocketOptions().SetDelayOption(false)
 	return gonet.NewTCPConn(wq, ep), nil
 }
 
-// dialAddr returns the address to dial for a destination, swapping the IP
-// for a cached hostname when one is known. Hostnames let NO_PROXY rules
-// match by name and keep CONNECT proxies that reject literal IPs working.
-func (ns *netstack) dialAddr(ip netip.Addr, port uint16) string {
+// dialAddresses keeps the destination IP for direct connections and uses a
+// cached hostname as the proxy authority when available.
+func (ns *netstack) dialAddresses(ip netip.Addr, port uint16) (addr, authority string) {
+	addr = netip.AddrPortFrom(ip, port).String()
 	if ns.ipCache != nil {
 		if name, ok := ns.ipCache.Get(ip); ok && name != "" {
-			addr := net.JoinHostPort(name, strconv.Itoa(int(port)))
-			ns.log.Debugf("Using hostname for proxy connect: %s -> %s", netip.AddrPortFrom(ip, port), addr)
-			return addr
+			return addr, net.JoinHostPort(name, strconv.Itoa(int(port)))
 		}
 	}
-	return netip.AddrPortFrom(ip, port).String()
+	return addr, addr
 }
 
 // proxyTCP copies bytes in both directions, half-closing each side as
