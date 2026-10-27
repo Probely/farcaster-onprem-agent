@@ -206,6 +206,8 @@ func tcpUserTimeout(interval time.Duration, count int) time.Duration {
 
 // handleDNSTCP serves DNS queries over a TCP connection by forwarding them to
 // the local resolver instead of dialing an upstream server.
+// Queries run sequentially per connection, so upstream timeouts also delay
+// queued queries.
 func (ns *netstack) handleDNSTCP(r *tcp.ForwarderRequest) {
 	completed := false
 	defer func() {
